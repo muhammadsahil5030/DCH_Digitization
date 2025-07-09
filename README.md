@@ -1,5 +1,5 @@
 # DCH_Digitization
-To run the digitization of the Drift chamber first we need:
+To run the digitization of the Drift chamber, first we need:
 ### 1. EDM4hep
 ### 2. FCCDetector
 ### 3. k4RecTracker
@@ -10,7 +10,7 @@ Source the key4hep setup
 source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
 ```
 
-#### Clone EDM4hep repository and then build and install
+#### Clone the EDM4hep repository and then build and install
 ```
 git clone https://github.com/key4hep/EDM4hep
 cd EDM4hep
@@ -68,16 +68,24 @@ To run the simple digitization, we can follow the steps given in the k4RecTracke
    ```
    https://fccsw.web.cern.ch/fccsw/filesForSimDigiReco/IDEA/DataAlgFORGEANT.root
    ```
-3. run digitizer for position smearing and cluster counting calculation
+3. Run the digitizer for position smearing and cluster counting calculation
    ```
    k4run runDCHdigi.py
    ```
-4. check distribution of distance from hit position to the wire
+4. Check the distribution of distances from the hit position to the wire
    ```
    python3 check_DCHdigi_output.py
    ```
-Now, if we want to make some changes in the DCHdigi_v01.cpp file, then we to:
-1. Re-build the k4RecTracker
-2. Export ```export LD_LIBRARY_PATH=/afs/cern.ch/user/m/msaiel/FCC_study/k4RecTracker/build/DCHdigi:$LD_LIBRARY_PATH```
-3. ```k4run DCHdigi_v01.py```
-4. And then follow you own analysis codes.
+Now, if we want to make some changes in the DCHdigi_v01.cpp file, then we need to:
+1. Rebuild the k4RecTracker
+   ```
+   build -j4
+   ```
+3. Export
+   ```
+   export LD_LIBRARY_PATH=/afs/cern.ch/user/m/msaiel/FCC_study/k4RecTracker/build/DCHdigi:$LD_LIBRARY_PATH
+   ```
+5. ```
+6. k4run DCHdigi_v01.py
+7. ```
+8. And then follow your analysis codes.
