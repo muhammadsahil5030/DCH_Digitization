@@ -23,7 +23,7 @@ cmake .. -DCMAKE_INSTALL_PREFIX=/afs/cern.ch/user/m/msaiel/FCC_study/EDM4hep/ins
 make -j4
 make install
 ```
-### Export the Environment variables
+#### Export the Environment variables
 ```
 export EDM4HEP_DIR=/afs/cern.ch/user/m/msaiel/FCC_study/EDM4hep/install
 export PATH=$EDM4HEP_DIR/bin:$PATH
@@ -57,3 +57,27 @@ The following should be called in the folder hosting both k4RecTracker and FCCDe
 export FCCDETECTORS=$PWD/FCCDetectors/;PATH=$PWD/FCCDetectors/install/bin/:$PATH;CMAKE_PREFIX_PATH=$PWD/FCCDetectors/install/:$CMAKE_PREFIX_PATH;LD_LIBRARY_PATH=$PWD/FCCDetectors/install/lib:$LD_LIBRARY_PATH;export PYTHONPATH=$PWD/FCCDetectors/install/python:$PYTHONPATH;LD_LIBRARY_PATH=$PWD/FCCDetectors/install/lib64:$LD_LIBRARY_PATH
 export K4RECTRACKER=$PWD/k4RecTracker/install/share/k4RecTracker; PATH=$PWD/k4RecTracker/install/bin/:$PATH; CMAKE_PREFIX_PATH=$PWD/k4RecTracker/install/:$CMAKE_PREFIX_PATH; LD_LIBRARY_PATH=$PWD/k4RecTracker/install/lib:$PWD/k4RecTracker/install/lib64:$LD_LIBRARY_PATH; export PYTHONPATH=$PWD/k4RecTracker/install/python:$PYTHONPATH
 ```
+#### Run the digitization
+Finally, we are ready to run the digitization.
+To run the simple digitization, we can follow the steps given in the k4RecTracker repository, but to run the actual digitization, we need to follow some steps
+1. Running the simulated steering
+   ```
+   ddsim --steeringFile sim_steering.py --outputFile 'dch_proton_10GeV.root' -N 10 --runType batch --random.seed 42
+   ```
+2. Download the file for cluster counting
+   ```
+   https://fccsw.web.cern.ch/fccsw/filesForSimDigiReco/IDEA/DataAlgFORGEANT.root
+   ```
+3. run digitizer for position smearing and cluster counting calculation
+   ```
+   k4run runDCHdigi.py
+   ```
+4. check distribution of distance from hit position to the wire
+   ```
+   python3 check_DCHdigi_output.py
+   ```
+Now, if we want to make some changes in the DCHdigi_v01.cpp file, then we to:
+1. Re-build the k4RecTracker
+2. Export ```export LD_LIBRARY_PATH=/afs/cern.ch/user/m/msaiel/FCC_study/k4RecTracker/build/DCHdigi:$LD_LIBRARY_PATH```
+3. ```k4run DCHdigi_v01.py```
+4. And then follow you own analysis codes.
