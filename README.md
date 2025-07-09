@@ -4,6 +4,14 @@ To run the digitization of the Drift chamber, first we need:
 ### 2. FCCDetector
 ### 3. k4RecTracker
 
+## Dependencies:
+1. ROOT
+2. PODIO
+3. EDM4HEP
+4. Gaudi
+5. k4FWCore
+6. DD4HEP
+
 ## EDM4hep:
 Source the key4hep setup
 ```
