@@ -88,11 +88,12 @@ Now, if we want to make some changes in the DCHdigi_v01.cpp file, then we need t
    ```
    build -j4
    ```
-3. Export
+2. Export
    ```
    export LD_LIBRARY_PATH=/afs/cern.ch/user/m/msaiel/FCC_study/k4RecTracker/build/DCHdigi:$LD_LIBRARY_PATH
    ```
-5. ```
-6. k4run DCHdigi_v01.py
-7. ```
-8. And then follow your analysis codes.
+3. Run the Python code again
+   ```
+   k4run DCHdigi_v01.py
+   ```
+4. And then follow your analysis codes.
