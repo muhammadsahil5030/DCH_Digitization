@@ -12,12 +12,11 @@ To run the digitization of the Drift chamber, first we need:
 5. k4FWCore
 6. DD4HEP
 
-## EDM4hep:
-Source the key4hep setup
+First we need to source the key4hep setup
 ```
 source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
 ```
-
+## EDM4hep
 #### Clone the EDM4hep repository and then build and install
 ```
 git clone https://github.com/key4hep/EDM4hep
