@@ -171,6 +171,22 @@ private:
   bool IsParticleCreatedInsideDriftChamber(const edm4hep::MCParticle&) const;
 
   //------------------------------------------------------------------
+  //---------------------------Changes made by Muhammad Saiel------------------------------//
+  Gaudi::Property<double> m_MeanExcEnergy_eV{this, "MeanExcitationEnergy_eV", 48.843,
+  "Mean excitation Energy I in eV for the gas (default 41.8 for He:iC4H10 90:10)"};
+
+  Gaudi::Property<double> m_GasDensity_g_cm3{this, "GasDensity_g_cm3", 3.984e-4,
+  "Gas density in g/cm3 used to convert MeV.cm2/g -> MeV/cm"};
+
+  Gaudi::Property<double> m_W_eff_eV{this, "W_eff_eV", 110.0,
+  "Effective energy per cluster in eV (W_eff)"};
+
+  Gaudi::Property<double> m_MassForBB_GeV{this, "MassForBB_GeV", 0.105658,
+  "Reference particle mass (GeV) for BetaGamma conversion (default muon mass)"};
+
+  double get_dNcldx_per_cm(double betagamma) const;
+  //-----------------------------------End of Changes--------------------------------------//
+
   //        debug information
 
   /// Flag to create output file with debug histgrams
@@ -212,14 +228,25 @@ private:
   TH1F* hTotPathCell;
   TH1F* hBetaGammaCell;
   
+  TH1F* hMC_perCell;
+
   TH1F* hNcl_perStep;
+  TH1F* hNcl_perStep10;
+  TH1F* hNcl_perStep2_5;
+  TH1F* hNcl_perStep6;
+  TH1F* hNcl_perCell;
+
+  TH1F* hNe_perStep;
+  TH1F* hNe_perCell;
+
   TH1F* hClSpacing_mm;
+  TH1F* hClSpacing_cell;
+
   TH2F* hNcl_vs_l;
-  
+
   TH1F* hNcl_perStep_Walaa;
   TH1F* hClSpacing_Walaa_mm;
   TH2F* hNcl_vs_l_Walaa;
-
 
   /// Create ROOT file for debug histograms
   /// Does not change ROOT directory
