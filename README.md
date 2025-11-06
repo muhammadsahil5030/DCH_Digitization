@@ -16,27 +16,6 @@ First we need to source the key4hep setup
 ```
 source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
 ```
-## EDM4hep
-#### Clone the EDM4hep repository and then build and install
-```
-git clone https://github.com/key4hep/EDM4hep
-cd EDM4hep
-mkdir build && cd build
-
-# Configure with install prefix
-cmake .. -DCMAKE_INSTALL_PREFIX=/afs/cern.ch/user/m/msaiel/FCC_study/EDM4hep/install
-
-# Build and install
-make -j4
-make install
-```
-#### Export the Environment variables
-```
-export EDM4HEP_DIR=/afs/cern.ch/user/m/msaiel/FCC_study/EDM4hep/install
-export PATH=$EDM4HEP_DIR/bin:$PATH
-export LD_LIBRARY_PATH=$EDM4HEP_DIR/lib:$LD_LIBRARY_PATH
-export CMAKE_PREFIX_PATH=$EDM4HEP_DIR:$CMAKE_PREFIX_PATH
-```
 ## FCCDetector
 ```
 git clone https://github.com/HEP-FCC/FCCDetectors
