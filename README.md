@@ -65,7 +65,7 @@ To run the simple digitization, we can follow the steps given in the k4RecTracke
 Now, if we want to make some changes or make any updates in the DCHdigi_v01.cpp file, then we need to:
 1. Rebuild the k4RecTracker
    ```
-  make install -j4
+   make install -j4
    ```
 2. Export
    ```
