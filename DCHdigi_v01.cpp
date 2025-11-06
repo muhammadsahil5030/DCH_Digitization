@@ -1,5 +1,6 @@
 #include "DCHdigi_v01.h"
-
+#include "BetheBloch.h"
+#include "TMath.h"
 #include "TH1F.h"
 #include "TFile.h"
 
