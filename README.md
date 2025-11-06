@@ -62,10 +62,10 @@ To run the simple digitization, we can follow the steps given in the k4RecTracke
    ```
    python3 check_DCHdigi_output.py
    ```
-Now, if we want to make some changes in the DCHdigi_v01.cpp file, then we need to:
+Now, if we want to make some changes or make any updates in the DCHdigi_v01.cpp file, then we need to:
 1. Rebuild the k4RecTracker
    ```
-   build -j4
+  make install -j4
    ```
 2. Export
    ```
@@ -73,6 +73,6 @@ Now, if we want to make some changes in the DCHdigi_v01.cpp file, then we need t
    ```
 3. Run the Python code again
    ```
-   k4run DCHdigi_v01.py
+   k4run runDCHdigi.py
    ```
 4. And then follow your analysis codes.
