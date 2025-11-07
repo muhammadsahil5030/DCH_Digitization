@@ -210,7 +210,7 @@ inline double compute_beta_gamma(const edm4hep::MCParticle& mc)
 // This function is used to calculate the dNdx using BB.h file
 double DCHdigi_v01::get_dNcldx_per_cm(double betagamma) const
 {
-  // 1) reconstruct momentum from βγ and the configured reference mass
+  // 1) reconstruct momentum from βγ
   const double m_GeV = m_MassForBB_GeV.value();
   const double p_GeV = betagamma * m_GeV;
 
@@ -220,14 +220,8 @@ double DCHdigi_v01::get_dNcldx_per_cm(double betagamma) const
                     m_MeanExcEnergy_eV.value() * 1e-6  // I in MeV
                   };
   const double dEdx_MeVcm2_per_g = BB::bethe_bloch(xp, par);
-
-  // 3) convert to MeV/cm using A (g/cm^3)
   const double dEdx_MeV_per_cm = dEdx_MeVcm2_per_g * m_GasDensity_g_cm3.value();
-
-  // 4) convert stopping power to *cluster rate* λ [clusters/cm] using W_eff (per cluster)
   const double lambda_per_cm = (dEdx_MeV_per_cm * 1.0e6) / m_W_eff_eV.value();
-
-  // Safety: never negative
   return (lambda_per_cm > 0.0) ? lambda_per_cm : 0.0;
 }
 
@@ -243,7 +237,6 @@ generate_cluster_positions_mm(double l_mm, double lambda_per_cm, std::mt19937_64
   if (l_mm <= 0.0 || lambda_per_cm <= 0.0) return pos_mm;
 
   const double l_cm = 0.1 * l_mm;
-  // Mean spacing = 1/lambda ; parameter of exponential = 1/mean
   std::exponential_distribution<double> expo(lambda_per_cm);
 
   double s_cm = 0.0;
