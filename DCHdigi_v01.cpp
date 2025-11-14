@@ -1,19 +1,12 @@
 #include "DCHdigi_v01.h"
 #include "BetheBloch.h"
 #include "TMath.h"
-#include "TH1F.h"
-#include "TFile.h"
 
 // STL
 #include <iostream>
 #include <sstream>
-
-#include "extension/MutableSenseWireHit.h"
-
-// random number generator (RNG)
 #include <random>
-#include <unordered_map>
-#include <cmath>
+#include "extension/MutableSenseWireHit.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////
 //////////////////////       DCHdigi_v01 constructor       ////////////////////////////
@@ -88,8 +81,7 @@ StatusCode DCHdigi_v01::initialize() {
   std::stringstream ss;
   PrintConfiguration(ss);
   info() << ss.str().c_str() << endmsg;
-  if (m_create_debug_histos.value())
-  {
+  if (m_create_debug_histos.value()) {
     hDpw = new TH1D("hDpw", "Distance from sim-hit to the wire, in cm", 100, 0, 1);
     hDpw->SetDirectory(0);
     hDww = new TH1D(
@@ -134,18 +126,12 @@ StatusCode DCHdigi_v01::initialize() {
 
   hBetaGammaCell = new TH1F("hBetaGammaCell", "Value of BetaGamma/Cell", 50, 0, 200);
   hBetaGammaCell->SetDirectory(0);
-  
+
   hMC_perCell = new TH1F("hMC_perCell", "Mean Number of Cluster; Mean_{Cluster}; Entries", 30, 0, 50);
   hMC_perCell->SetDirectory(0);
 
-  hNcl_perStep = new TH1F("hNcl_perStep", "n_{cl} per sim-step; n_{cl}; entries", 20, 0, 50);
+  hNcl_perStep = new TH1F("hNcl_perStep", "n_{cl} per sim-step; n_{cl}; entries", 20, 0, 40);
   hNcl_perStep->SetDirectory(0);
-  hNcl_perStep10 = new TH1F("hNcl_perStep10", "n_{cl} per sim-step; n_{cl}; entries", 20, 0, 50);
-  hNcl_perStep10->SetDirectory(0);
-  hNcl_perStep2_5 = new TH1F("hNcl_perStep2.5", "n_{cl} per sim-step; n_{cl}; entries", 20, 0, 50);
-  hNcl_perStep2_5->SetDirectory(0);
-  hNcl_perStep6 = new TH1F("hNcl_perStep6", "n_{cl} per sim-step; n_{cl}; entries", 20, 0, 50);
-  hNcl_perStep6->SetDirectory(0);
   hNcl_perCell = new TH1F("hNcl_perCell", "n_{cl} per Cell; N_{cl}; entries", 20, 0, 40);
   hNcl_perCell->SetDirectory(0);
 
@@ -161,12 +147,12 @@ StatusCode DCHdigi_v01::initialize() {
 
   hNcl_vs_l = new TH2F("hNcl_vs_l", "n_{cl} vs path length; l [mm]; n_{cl}", 60, 0, 30, 20, 0, 50);
   hNcl_vs_l->SetDirectory(0);
-  
+
   //These histogram show the walaa algorithm Number of clusters
   hNcl_perStep_Walaa = new TH1F("hNcl_perStep_Walaa","N_{cl} per step (Walaa)", 20, 0, 40);
-  
+
   hClSpacing_Walaa_mm = new TH1F("hClSpacing_Walaa_mm","Cluster spacing (Walaa);mm;entries",100,0,2);
-  
+
   hNcl_vs_l_Walaa = new TH2F("hNcl_vs_l_Walaa","N_{cl} vs l (Walaa);l [cm];N_{cl}",50,0,5,50,0,50);
 
   hNcl_perStep_Walaa->SetDirectory(0);
@@ -174,6 +160,7 @@ StatusCode DCHdigi_v01::initialize() {
   hNcl_vs_l_Walaa->SetDirectory(0);
 
 //-----------------------------------------------End-------------------------------------------------//
+
   return StatusCode::SUCCESS;
 }
 
@@ -191,8 +178,9 @@ std::tuple<std::mt19937_64, TRandom3> DCHdigi_v01::CreateRandomEngines(const edm
 
 //------------------------------------------Changes made by M. Saiel---------------------------------//
 //Accumulator:
-struct CellAcc 
+struct CellAcc
 {
+  double mu_sum = 0.0;
   double length_mm = 0.0;
   double bgL_sum = 0.0;
 };
@@ -207,10 +195,11 @@ inline double compute_beta_gamma(const edm4hep::MCParticle& mc)
   return p_mag / m;
 }
 
-// This function is used to calculate the dNdx using BB.h file
+// This function is used to calculate the dNdx using BB.h file:
+// when we have a beam-test TGraph gNcldx(bg)->(clusters/cm),
 double DCHdigi_v01::get_dNcldx_per_cm(double betagamma) const
 {
-  // 1) reconstruct momentum from βγ
+  // 1) reconstruct momentum from β
   const double m_GeV = m_MassForBB_GeV.value();
   const double p_GeV = betagamma * m_GeV;
 
@@ -222,12 +211,14 @@ double DCHdigi_v01::get_dNcldx_per_cm(double betagamma) const
   const double dEdx_MeVcm2_per_g = BB::bethe_bloch(xp, par);
   const double dEdx_MeV_per_cm = dEdx_MeVcm2_per_g * m_GasDensity_g_cm3.value();
   const double lambda_per_cm = (dEdx_MeV_per_cm * 1.0e6) / m_W_eff_eV.value();
+
   return (lambda_per_cm > 0.0) ? lambda_per_cm : 0.0;
 }
 
-// Grouping all function for calculating number of clusters:
+
 namespace
 {
+
 // Generate exponentially-distributed cluster positions along a step of length l_mm.
 // Output: vector of positions in mm, measured from the start of the step.
 inline std::vector<double>
@@ -248,6 +239,7 @@ generate_cluster_positions_mm(double l_mm, double lambda_per_cm, std::mt19937_64
   return pos_mm;
 
 }
+
 // --- Experimental cluster size probabilities w(n) for He–isobutane (90/10) ---
 // Based on Fischle et al., NIM A301 (1991)
 inline const std::vector<double>& w_cluster_He_iC4H10()
@@ -273,8 +265,8 @@ inline int sample_cluster_size(std::mt19937_64& rng)
   int n = dist(rng) + 1; // +1 because bins start at 1
   return n;
 }
-
 } //end namespace
+
 //-----------------------------------------End of the changes---------------------------------------//
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -299,9 +291,8 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
 
 //------------------------------------------------------------------------------------------//
 //---------------------------Changes by Muhammad Saiel--------------------------------------//
-//------------------------------------------------------------------------------------------//
-  
-  std::map<dd4hep::DDSegmentation::CellID, CellAcc> acc;
+//----------------This block is confirming the Geometry of the DCH--------------------------//
+
   std::cout << "input_sim_hits.size(): " << input_sim_hits.size() << std::endl;
   fflush(stdout);
 
@@ -333,20 +324,9 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
               << " | Cells in layer: " << ncell << std::endl;
 
   }// end of the loop on layers:
-
-  std::cout << ">>>>>>>> DCHdigi.cpp is imported >>>>>>>>>";
-  std::cout << "----------------------------------------------" << std::endl;
-  std::cout << "IDEA Drift Chamber Layers and Cells Summary" << std::endl;
-  std::cout << "----------------------------------------------" << std::endl;
-  std::cout << "----------------------------------------------" << std::endl;
-  std::cout << "Total number of cells in DCH: " << total_cells << std::endl;
-  std::cout << "Total number of layers in DCH: " << total_layers << std::endl;
-  std::cout << "Total number of superlayers in DCH: " << total_superlayers << std::endl;
-  std::cout << "----------------------------------------------" << std::endl;
-
-  //--------------------------------------End of my codes---------------------------------------//
-  //--------------------------------------------------------------------------------------------//
-
+  //--------------------------------------End of my Block---------------------------------------//
+  
+  //Varible initailizations:
   edm4hep::Vector3d pos;
   edm4hep::MCParticle mcParticle;
   int pdg;
@@ -356,30 +336,34 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
   int ilayer;
   int nphi;
 
+  std::unordered_map<dd4hep::DDSegmentation::CellID, CellAcc> acc;
   // loop over hit collection
   for (const auto& input_sim_hit : input_sim_hits) {
-    loop_index ++;
+    loop_index++;
 
     //------------------------------Changes made by Muhammad saiel----------------------------//
-    
+
     // This block code is looking for pathlenght of the and postion of the hit
     pos = input_sim_hit.getPosition();
     energyDep = input_sim_hit.getEDep();
     mcParticle = input_sim_hit.getParticle();
     pdg = mcParticle.getPDG();
 
-    // apply condition for only mouns hits
-    if (pdg != -13) continue;
+    // Apply filter for only MCParticle hits:
+    if(std::abs(pdg)!=211) continue;
+    if(input_sim_hit.getPathLength()<5.0) continue;
+
     dd4hep::DDSegmentation::CellID cellid = input_sim_hit.getCellID();
     ilayer = this->CalculateLayerFromCellID(cellid);
     nphi = this->CalculateNphiFromCellID(cellid);
     auto hit_position = Convert_EDM4hepVector_to_TVector3(input_sim_hit.getPosition(), MM_TO_CM);
+
     pathLength = input_sim_hit.getPathLength();
     R = std::sqrt(pos.x*pos.x + pos.y*pos.y);
     std::cout <<"Index: " << loop_index<<"\t"
-	    //<<"Layer: "<<ilayer<<"\t"
-	    //<<"Cell Number: "<< nphi <<"\t"
-	    //<< "pathLength: " << input_sim_hit.getPathLength() << " mm"<<"\t"
+	    <<"Layer: "<<ilayer<<"\t"
+	    <<"Cell Number: "<< nphi <<"\t"
+	    << "pathLength: " << input_sim_hit.getPathLength() << " mm"<<"\t"
 	    // "Position (x,y,z): (" << pos.x << ", " << pos.y << ", " << pos.z<<" ) mm"<<"\t"
 	    // "Tracke: R = "<< R <<"\t"
             //<< "PDG: " << mcParticle.getPDG() << "\t"
@@ -387,9 +371,9 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
 	    //<< "Hit Energy: " << input_sim_hit.getEDep()<<"GeV"
 	    //<<"Path Length/Cell : "<<a.length_mm<<" mm"
 	    << std::endl;
-	       
-    //---------------------Calculate N_cluster per step-------------------------//
 
+    //---------------------Calculate N_cluster per step-------------------------//
+    
     const double L_mm = input_sim_hit.getPathLength();
     if (L_mm <=0) continue;
     const double l_cm = 0.1*L_mm;
@@ -398,38 +382,36 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
     const double lambda_per_cm = get_dNcldx_per_cm(bg);
     double mu = lambda_per_cm * l_cm;
 
-    std::poisson_distribution<int> pois(mu);
-    const int Ncl_step = std::max(0, pois(rng_engine));
-
     auto& a = acc[cellid];
     a.length_mm += L_mm;
     a.bgL_sum += bg * L_mm;
+    a.mu_sum += lambda_per_cm * l_cm;
 
-    if (m_create_debug_histos.value())
-    {
-            hNcl_perStep->Fill(Ncl_step);
-	}
-    
-	//Generate cluster position inside the loop:
+    //for the moment we don't need this
+    std::poisson_distribution<int> pois(mu);
+    const int Ncl_step = std::max(0, pois(rng_engine));
+    hNcl_perStep->Fill(Ncl_step);
+
+    //Generate cluster position inside the loop:
     auto cl_positions_mm = generate_cluster_positions_mm(L_mm, lambda_per_cm, rng_engine);
     int n_clusters_in_step = cl_positions_mm.size();
     for (size_t i = 1; i < cl_positions_mm.size(); ++i)
     {
       hClSpacing_mm->Fill(cl_positions_mm[i] - cl_positions_mm[i-1]);
     }
-
+    
     //Generate Cluster size inside the loop:
     int Ne;
     std::vector<int> electrons_per_cluster;
     for (int i = 0; i < n_clusters_in_step; ++i)
     {
-            Ne = sample_cluster_size(rng_engine);
-            electrons_per_cluster.push_back(Ne);
-
+	    Ne = sample_cluster_size(rng_engine);
+	    electrons_per_cluster.push_back(Ne);
+    
     }
     for (auto ne : electrons_per_cluster)
     {
-            hNe_perStep->Fill(ne);
+	    hNe_perStep->Fill(ne);
     }
 
     //--------------------------------------------------------------------------/
@@ -448,6 +430,7 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
 //--------------------------------------------------------------------------------------------//
 //-----------------------------------------end of the chages----------------------------------//
 //--------------------------------------------------------------------------------------------//
+
 
 
     // -------------------------------------------------------------------------
@@ -540,33 +523,40 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
     oDCHsimdigi_association.setTo(input_sim_hit);
     output_digi_sim_association.push_back(oDCHsimdigi_association);
 
-  } // end loop over hit collect
+  } // end loop over hit collection
 
 //--------------------------------Changes made by Muhammad saiel-------------------------------//
-
+//---------------This block is used when we are using "Geant4SimpleTrackerAction"--------------//
+	
 for (const auto& kValue : acc)
 {
   const auto& a = kValue.second;
   if (a.length_mm <= 0.0) continue;
+  //std::cout<<"Length per Cell: "<<a.length_mm<<" mm"<<std::endl;
 
-  const double bg_cell = a.bgL_sum / a.length_mm;
-  const double lambda_cell_per_cm = get_dNcldx_per_cm(bg_cell);
-  const double mu_cell = lambda_cell_per_cm * (0.1*a.length_mm);
-  if (a.length_mm > 10 && a.length_mm <20)
+  //find the average betagamma
+  //const double bg_cell = a.bgL_sum / a.length_mm;
+  const double lambda_cell_per_cm = get_dNcldx_per_cm(a.bgL_sum);
+  const double mu_cell = lambda_cell_per_cm * (a.length_mm*0.1);
+  //const double mu_cell = a.mu_sum;
+  
+  //plotting the mean value of the N. clusters
+  if (a.length_mm >= 5)
   {
-        hMC_perCell->Fill(mu_cell);
+  	hMC_perCell->Fill(a.mu_sum);
   }
 
   std::poisson_distribution<int> pois_cell(mu_cell);
   const int Ncl_cell = std::max(0, pois_cell(rng_engine));
   if (m_create_debug_histos.value())
   {
-          if (a.length_mm > 10 && a.length_mm <20)
-          {
-                hNcl_perCell->Fill(Ncl_cell);
-          }
+	  //if (a.length_mm >= 5)
+	  //{
+	hNcl_perCell->Fill(Ncl_cell);
+	  //}
   }
-//Generate Cluster position per cell:
+
+  //Generate Cluster position per cell:
   auto cl_positions_cell = generate_cluster_positions_mm(a.length_mm, lambda_cell_per_cm, rng_engine);
   int n_clusters_in_cell = cl_positions_cell.size();
   for (size_t cell = 1; cell < cl_positions_cell.size(); ++cell)
@@ -632,13 +622,10 @@ void DCHdigi_v01::Create_outputROOTfile_for_debugHistograms() {
 
     hTotPathCell->Write();
     hBetaGammaCell->Write();
-    
+
     hMC_perCell->Write();
 
     hNcl_perStep->Write();
-    hNcl_perStep10->Write();
-    hNcl_perStep2_5->Write();
-    hNcl_perStep6->Write();
     hNcl_perCell->Write();
 
     hNe_perStep->Write();
@@ -729,7 +716,6 @@ std::pair<uint32_t, std::vector<int> > DCHdigi_v01::CalculateClusters(const edm4
   float ExECl1 = 0;
   float cut = 1000; // controlla
   float EIzs = 25.6;
-  float ExECl1totRec = 0;
   float rndCorr(0);
   const int nhEp = 10;
   float hEpcut[10] = {100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
@@ -770,7 +756,6 @@ std::pair<uint32_t, std::vector<int> > DCHdigi_v01::CalculateClusters(const edm4
   int NCl1(0);
 
   //___________________________________________________________________
-  
   double thisparticle_mass = (thisParticle.getMass() / 1000.); // mass in GeV, required in MeV
   double bg = Momentum / thisparticle_mass;
 
@@ -888,7 +873,6 @@ std::pair<uint32_t, std::vector<int> > DCHdigi_v01::CalculateClusters(const edm4
       if (ExECl1 > Eloss) {
         ExECl1 = Eloss;
       }
-      ExECl1totRec += ExECl1;
       NCl1++;
       Eloss -= ExECl1;
       // cluster size is 1
@@ -939,8 +923,8 @@ std::pair<uint32_t, std::vector<int> > DCHdigi_v01::CalculateClusters(const edm4
   if (ClSz_vector.size() != std::size_t(total_number_of_clusters))
     debug() << "Array of cluster sizes does not match total number of clusters\n";
 
-  // return {total_number_of_clusters, total_number_of_electrons_over_all_clusters};
-/*  
+  //return {total_number_of_clusters, total_number_of_electrons_over_all_clusters};
+
   //---------changes made by Muhammad saiel---------//
   // ---- [DEBUG: Walaa-based cluster stats] ----
 if (m_create_debug_histos)
@@ -956,6 +940,7 @@ if (m_create_debug_histos)
     if (meanSpacing_mm > 0.0) hClSpacing_Walaa_mm->Fill(meanSpacing_mm);
 }
 //------------------End of changes---------//
-*/  
+
+  // return {total_number_of_clusters, total_number_of_electrons_over_all_clusters};
   return {total_number_of_clusters, ClSz_vector};
 }
