@@ -45,11 +45,12 @@ export K4RECTRACKER=$PWD/k4RecTracker/install/share/k4RecTracker; PATH=$PWD/k4Re
 ```
 #### Run the digitization
 Finally, we are ready to run the digitization.
-To run the simple digitization, we can follow the steps given in the k4RecTracker repository, but to run the actual digitization, we need to follow some steps
+To run the simple digitization, we can follow the steps given in the k4RecTracker repository on GitHub, but to run the actual digitization, we need to follow some steps:
 1. Running the simulated steering
    ```
    ddsim --steeringFile sim_steering.py --outputFile 'dch_proton_10GeV.root' -N 10 --runType batch --random.seed 42
    ```
+   Note: We can change the gun particles from the steering file according to our analysis.
 2. Download the file for cluster counting
    ```
    https://fccsw.web.cern.ch/fccsw/filesForSimDigiReco/IDEA/DataAlgFORGEANT.root
@@ -71,6 +72,7 @@ Now, if we want to make some changes or make any updates in the DCHdigi_v01.cpp 
    ```
    export LD_LIBRARY_PATH=/afs/cern.ch/user/m/msaiel/Digitization/k4RecTracker/build/DCHdigi:$LD_LIBRARY_PATH
    ```
+   Note: Set the path according to your own directories.
 3. Run the Python code again
    ```
    k4run runDCHdigi.py
