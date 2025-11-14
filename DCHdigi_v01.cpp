@@ -408,18 +408,6 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
     if (m_create_debug_histos.value())
     {
             hNcl_perStep->Fill(Ncl_step);
-            if (L_mm > 9.5 && L_mm < 10.5)
-            {
-                    hNcl_perStep10->Fill(Ncl_step);
-            }
-            if (L_mm > 2.3 && L_mm < 3.3)
-            {
-                    hNcl_perStep2_5->Fill(Ncl_step);
-            }
-            if (L_mm > 5.5 && L_mm < 6.5)
-            {
-                    hNcl_perStep6->Fill(Ncl_step);
-            }
 	}
     
 	//Generate cluster position inside the loop:
