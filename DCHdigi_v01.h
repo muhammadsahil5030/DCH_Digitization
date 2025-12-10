@@ -67,9 +67,15 @@
 #include "TH1D.h"
 #include "TRandom3.h"
 #include "TVector3.h"
+#include "TH1F.h"
+#include "TH2F.h"
+#include "TH3F.h"
+#include "TTree.h"
 
-// Class developed by Walaa for the CLS
-#include "AlgData.h"
+//requirments for the xtrelTIME
+class XTRELTIME;
+
+class TF1;
 
 /// constant to convert from mm (EDM4hep) to DD4hep (cm)
 
@@ -149,44 +155,72 @@ private:
     return {v.x() * scale, v.y() * scale, v.z() * scale};
   };
 
-  //------------------------------------------------------------------
-  //        cluster calculation, developed by Walaa
-
-  /// Flag to create to calculate cluster counting information
-  Gaudi::Property<bool> m_calculate_dndx{this, "calculate_dndx", false,
-                                         "Calculate number of clusters and electron per cluster"};
-
-  /// file with distributions to be sampled
-  Gaudi::Property<std::string> m_fileDataAlg{
-      this, "fileDataAlg", "/eos/project/f/fccsw-web/www/filesForSimDigiReco/IDEA/DataAlgFORGEANT.root",
-      "ROOT file with cluster size distributions"};
-
-  /// pointer to wrapper class, which contains the cluster size and number distributions
-  AlgData* flData;
-
-  /// code developed by Walaa for calculating number of clusters and cluster size of each one
-  std::pair<uint32_t, std::vector<int>> CalculateClusters(const edm4hep::SimTrackerHit& input_sim_hit,
-                                                          TRandom3& myRandom) const;
-
   bool IsParticleCreatedInsideDriftChamber(const edm4hep::MCParticle&) const;
-
-  //------------------------------------------------------------------
+  
   //---------------------------Changes made by Muhammad Saiel------------------------------//
-  Gaudi::Property<double> m_MeanExcEnergy_eV{this, "MeanExcitationEnergy_eV", 48.843,
-  "Mean excitation Energy I in eV for the gas (default 41.8 for He:iC4H10 90:10)"};
+  Gaudi::Property<double> m_MeanExcEnergy_eV{this, "MeanExcitationEnergy_eV", 48.48, 
+	  "Mean excitation Energy I in eV for the gas (Ref: materials_o1_v02.xml)"};
 
   Gaudi::Property<double> m_GasDensity_g_cm3{this, "GasDensity_g_cm3", 3.984e-4,
-  "Gas density in g/cm3 used to convert MeV.cm2/g -> MeV/cm"};
+	  "Gas density in g/cm3 used to convert MeV.cm2/g -> MeV/cm"};
 
-  Gaudi::Property<double> m_W_eff_eV{this, "W_eff_eV", 110.0,
-  "Effective energy per cluster in eV (W_eff)"};
+  Gaudi::Property<double> m_W_eff_eV{this, "W_eff_eV", 41,
+	  "Effective energy per cluster in eV (W_eff)"};
 
   Gaudi::Property<double> m_MassForBB_GeV{this, "MassForBB_GeV", 0.105658,
-  "Reference particle mass (GeV) for BetaGamma conversion (default muon mass)"};
+	  "Reference particle mass (GeV) for BetaGamma conversion (default muon mass)"};
 
   double get_dNcldx_per_cm(double betagamma) const;
-  //-----------------------------------End of Changes--------------------------------------//
 
+  //this block is used for drift time parameterization:
+  Gaudi::Property<std::string> m_xtFileName{this, "XTFileName", "X_T_Relation_8515.root",
+	  "ROOT file with x-t relation used to convert radius to drift time" };
+
+  mutable XTRELTIME* m_xtHelper{nullptr};
+  double electronDriftTime(double r_cm, TRandom3& myRandom) const;
+
+  //Gaudi properties for the Gas Gain/ polya parameters:
+  Gaudi::Property<double> m_GasGain{this, "GasGain", 3.0e4,
+	  "Mean gas gain used in Polya distribution (arbitrary units)" };
+  
+  Gaudi::Property<double> m_PolyaTheta{this, "PolyaTheta", 0.5,
+	  "Polya shape parameter theta (typicaly around 5 for drift tube)"};
+  
+  TF1* m_polya{nullptr};
+  double avalancheCharge(TRandom3& myRandom) const;
+
+  // this block is looking for pulse shaaping:
+  Gaudi::Property<double> m_pulseAmplitudeScale{this, "PulseAmplitudeScale", 5.e-6,
+          "Global Scale factor converting avalache charge to voltage"};
+
+  Gaudi::Property<double> m_pulseRiseTime_ns{this, "PulseRiseTime_ns", 0.3,
+          "Rise time of the single electron pulse (ns)"};
+
+  Gaudi::Property<double> m_pulseFallTime_ns{this, "PulseFallTime_ns", 3.0,
+          "Fall time of the single electron pulse (ns)"};
+
+  // Debug: independent single-pulse plotting options
+  Gaudi::Property<int> m_nBinsSignalPulse{
+    this, "NBinsSignalPulse", 400,
+    "Number of bins for the single-electron pulse debug histogram"};
+
+  Gaudi::Property<double> m_signalPulseTmin_ns{
+    this, "SignalPulseTmin_ns", -20.0,
+    "Minimum time (ns) for the single-electron pulse debug histogram"};
+
+  Gaudi::Property<double> m_signalPulseTmax_ns{
+    this, "SignalPulseTmax_ns", 200.0,
+    "Maximum time (ns) for the single-electron pulse debug histogram"};
+
+  Gaudi::Property<double> m_waveformTimeWindow_ns{this, "WaveformTimeWindow_ns", 200.0,
+          "Time window of analog waveform (ns)"};
+
+  Gaudi::Property<double> m_waveformBinSize_ns{this, "WaveformBinSize_ns", 0.1,
+          "Time bin size for the analog waveform (ns)"};
+
+  double singleElectronPulse(double t_ns, double t0_ns, double q) const;
+  //-----------------------------------End of Changes--------------------------------------//
+  
   //        debug information
 
   /// Flag to create output file with debug histgrams
@@ -210,9 +244,8 @@ private:
   /// histogram to store smearing perpendicular the wire
   TH1D* hSxy;
 
-  //histogram to store the path length of the hits
+//------------------------Changes made by Muhammad Saiel----------------------//
   TH1F* hPathLength;
-  
   TH2F* hPLvsnC;
 
   TH1F* hX;
@@ -227,26 +260,41 @@ private:
 
   TH1F* hTotPathCell;
   TH1F* hBetaGammaCell;
-  
+
   TH1F* hMC_perCell;
 
   TH1F* hNcl_perStep;
-  TH1F* hNcl_perStep10;
-  TH1F* hNcl_perStep2_5;
-  TH1F* hNcl_perStep6;
-  TH1F* hNcl_perCell;
+  //TH1F* hNcl_perCell;
 
   TH1F* hNe_perStep;
-  TH1F* hNe_perCell;
+  //TH1F* hNe_perCell;
 
   TH1F* hClSpacing_mm;
-  TH1F* hClSpacing_cell;
+  //TH1F* hClSpacing_cell;
 
+  TH2F* hPrimaryXY;
+  TH2F* hSecondaryXY;
+  
   TH2F* hNcl_vs_l;
+  
+  TH2F* hXT;
+  TH1F* hT;
+  TH1F* hV;
+  TH2F* hVvsR;
+  TH1F* hDriftTime;
+  TH2F* hDriftTimeVsLayer;
 
-  TH1F* hNcl_perStep_Walaa;
-  TH1F* hClSpacing_Walaa_mm;
-  TH2F* hNcl_vs_l_Walaa;
+  TH1F* hAvalancheQ;
+
+  mutable TH1F* hSignalPulse;
+  TH1F* hWaveform;
+
+  mutable bool m_waveformFilled{false};
+
+  mutable TTree* m_clusterTree{nullptr};
+  mutable float m_cluster_Ncl_step{0.f};
+
+//--------------------------------------End of Changes-------------------------//
 
   /// Create ROOT file for debug histograms
   /// Does not change ROOT directory
