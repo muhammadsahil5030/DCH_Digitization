@@ -2,6 +2,7 @@
 //
 #ifndef DCH_PHYSICS_TOOLS_H
 #define DCH_PHYSICS_TOOLS_H
+#include "XTRELTIME.h"
 
 #include <vector>
 #include <random>
@@ -30,7 +31,7 @@ inline double compute_beta_gamma(const edm4hep::MCParticle& mc)
 
 // This function is used to calculate the dNdx using BB.h file:
 // when we have a beam-test TGraph gNcldx(bg)->(clusters/cm),
-double DCHdigi_v01::get_dNcldx_per_cm(double betagamma) const
+inline double DCHdigi_v01::get_dNcldx_per_cm(double betagamma) const
 {
   // 1) reconstruct momentum from β
   const double m_GeV = m_MassForBB_GeV.value();
@@ -100,4 +101,75 @@ inline int sample_cluster_size(std::mt19937_64& rng)
 
 } //end namespace
 
+inline double DCHdigi_v01::electronDriftTime(double r_cm, TRandom3& myRandom) const
+{
+  if (!m_xtHelper) {
+    // Safety: if x-t helper is not initialized, return 0
+    return 0.0;
+  }
+
+  // call XTREL::spaceToTime(dist, version) inherited by XTRELTIME:
+  // dist: distance in cm; version=0 uses table with interpolation
+  Float_t* x2time = m_xtHelper->spaceToTime(static_cast<Float_t>(r_cm), 0);
+
+  // x2time[0] = mean drift time
+  // x2time[1] = longitudinal diffusion sigma (time units)
+  const double t0    = static_cast<double>(x2time[0]);
+  const double sigma = static_cast<double>(x2time[1]);
+
+  // smear with Gaussian diffusion
+  const double t = (t0 + myRandom.Gaus(0.0, sigma))*1000.0;
+  const double t_ns = std::max(0.0, t);
+
+  return t_ns;
+}
+// This block is sampling avalache charge for 
+// one electron using polya distibution
+inline double DCHdigi_v01::avalancheCharge(TRandom3& myRandom) const
+{
+	if (!m_polya) return 0.0;
+
+	double q = m_polya->GetRandom(&myRandom);
+	return (q > 0.0) ? q : 0.0;
+
+}
+
+// ----------------------------------------------------------------------
+//  Single-electron pulse shape (Point 7: rise and fall times)
+// ----------------------------------------------------------------------
+// t_ns   : observation time (ns)
+// t0_ns  : electron arrival time (ns)
+// q      : avalanche charge (arbitrary units, e.g. from Polya)
+//
+// Shape: double exponential CR-RC-like pulse
+// ----------------------------------------------------------------------
+inline double DCHdigi_v01::singleElectronPulse(double t_ns,
+                                               double t0_ns,
+                                               double q) const
+{
+  const double dt = t_ns - t0_ns;
+  if (dt <= 0.0) {
+    // No signal before the electron arrival
+    return 0.0;
+  }
+
+  const double tau_r = m_pulseRiseTime_ns.value();  // ns
+  const double tau_f = m_pulseFallTime_ns.value();  // ns
+
+  // Safety: if parameters are not set, just return a delta-like pulse
+  if (tau_r <= 0.0 || tau_f <= 0.0 || tau_r == tau_f) {
+    return q;
+  }
+
+  // Double exponential shape (not normalized, we keep q as overall scale)
+  const double term_f = std::exp(-dt / tau_f);
+  const double term_r = std::exp(-dt / tau_r);
+
+  // Optional normalization factor so peak ~ q (roughly)
+  const double norm = 1.0 / (tau_f - tau_r);
+
+  const double q_eff = q * m_pulseAmplitudeScale.value();
+
+  return q_eff * norm * (term_f - term_r);
+}
 #endif
