@@ -78,3 +78,5 @@ Now, if we want to make some changes or make any updates in the DCHdigi_v01.cpp 
    k4run runDCHdigi.py
    ```
 4. And then follow your analysis codes.
+5. <img width="1078" height="617" alt="waveform" src="https://github.com/user-attachments/assets/5b26ff29-27c9-4ce5-94fa-9c2c57271b41" />
+
