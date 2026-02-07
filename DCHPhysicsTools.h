@@ -3,21 +3,12 @@
 #ifndef DCH_PHYSICS_TOOLS_H
 #define DCH_PHYSICS_TOOLS_H
 #include "XTRELTIME.h"
-
 #include <vector>
 #include <random>
 #include <numeric>
 #include <cmath>
-
 //include EDM4hep
 #include <edm4hep/MCParticle.h>
-
-struct CellAcc
-{
-  double mu_sum = 0.0;
-  double length_mm = 0.0;
-  double bgL_sum = 0.0;
-};
 
 // Function compute betaGamma:
 inline double compute_beta_gamma(const edm4hep::MCParticle& mc)
@@ -52,6 +43,15 @@ inline double DCHdigi_v01::get_dNcldx_per_cm(double betagamma) const
 namespace
 {
 
+inline int ZT_poisson(double mu, std::mt19937_64& rng)
+{
+  if (!(mu > 0) || !std::isfinite(mu)) return 0;
+  std::poisson_distribution<int> pois(mu);
+  int k = 0;
+  do {k = pois(rng); }  while (k == 0);
+  return k;
+}
+
 // Generate exponentially-distributed cluster positions along a step of length l_mm.
 // Output: vector of positions in mm, measured from the start of the step.
 inline std::vector<double>
@@ -77,17 +77,55 @@ generate_cluster_positions_mm(double l_mm, double lambda_per_cm, std::mt19937_64
 // Based on Fischle et al., NIM A301 (1991)
 inline const std::vector<double>& w_cluster_He_iC4H10()
 {
-  static const std::vector<double> w = {
-    0.78, 0.12, 0.034, 0.016, 0.0095, 0.006, 0.0044, 0.0034,
-    0.0027, 0.0021, 0.0017, 0.0013, 0.0010, 0.0008, 0.0006
-  };
-  static bool normalized = false;
-  if (!normalized) {
-    double sum = std::accumulate(w.begin(), w.end(), 0.0);
-    for (auto& x : const_cast<std::vector<double>&>(w)) x /= sum;
-    normalized = true;
+  constexpr int KMAX = 35;
+  static std::vector<double> w;
+  static bool init = false;
+
+  if (!init) {
+    w.assign(KMAX, 0.0);
+    w[0]  = 76.60;
+    w[1]  = 12.50;
+    w[2]  =  4.60;
+    w[3]  =  2.00;
+    w[4]  =  1.20;
+    w[5]  =  0.75;
+    w[6]  =  0.50;
+    w[7]  =  0.36;
+    w[8]  =  0.25;
+    w[9]  =  0.19;
+    w[10] =  0.14;
+    w[11] =  0.10;
+    w[12] =  0.08;
+    w[13] =  0.06;
+    w[14] =  0.048;
+    w[15] =  0.043;
+    w[16] =  0.038;
+    w[17] =  0.034;
+    w[18] =  0.030;
+
+    //for electrons more than 19 use the function: 20/k^2
+    for (int k = 20; k <= KMAX; ++k) {
+      w[k - 1] = 10.9 / (double(k) * double(k));
+    }
+    for (auto& x : w) x *= 0.01;
+
+    const double sum = std::accumulate(w.begin(), w.end(), 0.0);
+    if (sum > 0.0) {
+      for (auto& x : w) x /= sum;
+    }
+    init = true;
   }
   return w;
+}
+
+inline double mean_cluster_size_He()
+{
+  const auto& w = w_cluster_He_iC4H10();
+  double Ne_mean = 0.0;
+  for (size_t i = 0; i < w.size(); ++i) {
+    Ne_mean += (double(i) + 1.0) * w[i];
+  }
+  return Ne_mean;
 }
 
 // --- Draw a cluster size n_e according to experimental probabilities ---
@@ -104,7 +142,6 @@ inline int sample_cluster_size(std::mt19937_64& rng)
 inline double DCHdigi_v01::electronDriftTime(double r_cm, TRandom3& myRandom) const
 {
   if (!m_xtHelper) {
-    // Safety: if x-t helper is not initialized, return 0
     return 0.0;
   }
 
@@ -123,6 +160,54 @@ inline double DCHdigi_v01::electronDriftTime(double r_cm, TRandom3& myRandom) co
 
   return t_ns;
 }
+
+// ----------------------------------------------------------------------
+// Local drift velocity v(r) = dr/dt from the SAME X-T table (not r/t)
+// Returns: v in cm/us
+// ----------------------------------------------------------------------
+inline double DCHdigi_v01::electronDriftVelocity_cm_per_us(double r_cm) const
+{
+  if (!m_xtHelper) return 0.0;
+
+  const int n = m_xtHelper->GetNpoints();
+  if (n < 2) return 0.0;
+  Float_t* dist = m_xtHelper->GetDistData();
+  Float_t* time = m_xtHelper->GetTimeData();
+
+  // clamp to table range
+  if (r_cm <= dist[0]) r_cm = dist[0];
+  if (r_cm >= dist[n-1]) r_cm = dist[n-1] - 1e-6;
+
+  // find bracketing bin [i, i+1]
+  int i = 0;
+  while (i < n-2 && dist[i+1] < r_cm) ++i;
+
+  const double dr = double(dist[i+1]) - double(dist[i]); 
+  const double dt = double(time[i+1]) - double(time[i]);   
+  if (dr <= 0.0 || dt <= 0.0) return 0.0;
+  const double v_cm_per_ns = dr / dt; 
+  return v_cm_per_ns;              	// cm/us
+}
+
+// ----------------------------------------------------------------------
+// Local electric field in a cylindrical drift cell: E(r)=Econst/r
+// Econst = V / ln(Rtube/Rwire). Units: V/cm if r in cm.
+// ----------------------------------------------------------------------
+inline double DCHdigi_v01::electricField_V_per_cm(double r_cm) const
+{
+  if (!m_xtHelper) return 0.0;
+
+  const double V     = m_xtHelper->GetVolts();
+  const double Rtube = m_xtHelper->GetInnerRtube();
+  const double Rwire = m_xtHelper->GetRwire();
+
+  if (r_cm <= 0.0 || Rtube <= 0.0 || Rwire <= 0.0 || Rtube <= Rwire) return 0.0;
+
+  const double Econst = V / std::log(Rtube / Rwire);
+  return Econst / r_cm; // V/cm
+}
+
+
 // This block is sampling avalache charge for 
 // one electron using polya distibution
 inline double DCHdigi_v01::avalancheCharge(TRandom3& myRandom) const
