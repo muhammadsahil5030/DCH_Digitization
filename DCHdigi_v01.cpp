@@ -14,9 +14,7 @@
 #include "TCanvas.h"
 #include "TROOT.h"
 #include "TDirectory.h"
-#include "TVirtualFFT.h"
 #include <numeric> 
-#include "TParameter.h"
 
 // STL
 #include <algorithm>
@@ -29,72 +27,6 @@
 
 #include "DD4hep/Detector.h"
 #include "DD4hep/DetElement.h"
-#include "DD4hep/Volumes.h"
-
-
-namespace {
-
-  // Read a "vector-like" object stored as TGraph or TH1 into std::vector<double>.
-  // For your file, ROOT browser shows green icons -> very likely TGraph.
-  
-  std::vector<double> readVectorFromObj(TObject* obj, bool useX) {
-  std::vector<double> out;
-  if (!obj) return out;
-
-  if (auto* g = dynamic_cast<TGraph*>(obj)) {
-    const int n = g->GetN();
-    out.reserve(n);
-    for (int i = 0; i < n; ++i) {
-      double x = 0.0, y = 0.0;
-      g->GetPoint(i, x, y);
-      out.push_back(useX ? x : y);
-    }
-    return out;
-  }
-
-  if (auto* h = dynamic_cast<TH1*>(obj)) {
-    const int n = h->GetNbinsX();
-    out.reserve(n);
-    for (int i = 1; i <= n; ++i) {
-      out.push_back(useX ? h->GetBinCenter(i) : h->GetBinContent(i));
-    }
-    return out;
-  }
-
-  return out;
-}
-
-
-  // Read a scalar stored as TGraph(1 point) or TH1(1 bin) or TParameter<double>
-  double readScalarFromObj(TObject* obj) {
-    if (!obj) return 0.0;
-
-    if (auto* p = dynamic_cast<TParameter<double>*>(obj)) {
-      return p->GetVal();
-    }
-
-    if (auto* g = dynamic_cast<TGraph*>(obj)) {
-      double x=0, y=0;
-      if (g->GetN() > 0) {
-        g->GetPoint(0, x, y);
-        return y;
-      }
-    }
-
-    if (auto* h = dynamic_cast<TH1*>(obj)) {
-      if (h->GetNbinsX() >= 1) return h->GetBinContent(1);
-    }
-
-    return 0.0;
-  }
-
-  inline int float_cmp(double a, double b, double eps=1e-9) {
-    if (std::fabs(a-b) < eps) return 0;
-    return (a > b) ? 1 : -1;
-  }
-
-} // end anon namespace
-
 
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -211,7 +143,7 @@ StatusCode DCHdigi_v01::initialize() {
 	  << " grid=" << 240 << "x" << 240 << endmsg;
 
   ///////////////////////////////////////////////////////////////////////////////////////
-  ///////////////////////////////   Use Noise from par.root  ////////////////////////////
+  ///////////////////////////////        Initialize Noise    ////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////////////
   if (m_enableFFTNoise.value()) {
 	  std::string err;
@@ -300,7 +232,7 @@ StatusCode DCHdigi_v01::initialize() {
   hRvsZ = new TH2F("hRvsZ","R vs z; z [mm]; R [mm]", 50, 0, 2400,  50, 0, 2400);
   hRvsZ->SetDirectory(0);
 
-  hNcl_perStep = new TH1F("hNcl_perStep", "n_{cl} per sim-step; n_{cl}; entries", 50, 0, 50);
+  hNcl_perStep = new TH1F("hNcl_perStep", "n_{cl} per cm; n_{cl}; entries", 40, 0, 40);
   hNcl_perStep->SetDirectory(0);
   hNe_perStep = new TH1F("hNe_perStep", "N_{e} per sim-step; Cluster size; entries", 10, 0, 10);
   hNe_perStep->SetDirectory(0);
@@ -309,7 +241,7 @@ StatusCode DCHdigi_v01::initialize() {
 
   hTd = new TH1F  ("hTd", "Drift Time; t (ns); Entries", 50, 0, 1000);
   hTd->SetDirectory(0);
-  hXT = new TH2F ("hXT", "x-t relation; r (cm); t (ns)", 50, 0, 1.0, 50 , 0, 3500);
+  hXT = new TProfile ("hXT", "x-t relation; r (cm); t (ns)", 50, 0, 1.0);
   hXT->SetDirectory(0);
   if (m_create_debug_histos.value()) {
   m_grXT2D = new TGraph2D();
@@ -388,7 +320,8 @@ std::tuple<std::mt19937_64, TRandom3> DCHdigi_v01::CreateRandomEngines(const edm
     myRandom.Rndm();
   return {rng_engine, myRandom};
 }
-
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////       operator()       ////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////
 
 std::tuple<extension::SenseWireHitCollection, extension::SenseWireHitSimTrackerHitLinkCollection>
@@ -427,6 +360,7 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
   // loop over hit collection
   int loop_index = 0;
 
+  // start on each simulated hit(GEANT4 STEP SEGMENT):
   for (const auto& input_sim_hit : input_sim_hits) {
     loop_index++;
 
@@ -446,37 +380,47 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
     R = std::sqrt(pos.x*pos.x + pos.y*pos.y);
 
     //Looking for only MC Particle Hit:
-    const bool isPrimaryMuonHit =(std::abs(pdg) == 13) &&
+    const bool isPrimaryMuonHit =(pdg == -13) &&
 	    !input_sim_hit.isProducedBySecondary();
+
+    // Looking for secondray hits:
     bool isDeltaElectronHit =(std::abs(pdg) == 11) &&
 	    input_sim_hit.isProducedBySecondary() &&
 	    IsParticleCreatedInsideDriftChamber(mcParticle);
     if (!isPrimaryMuonHit) continue;
     //if (isDeltaElectronHit) continue;
-    //if(input_sim_hit.getPathLength()<=1.0) continue;
-  
-    std::cout <<"Hits No: " << loop_index<<"\t"
+ 
+    //Print some variable
+    std::cout<<"Hits No: " << loop_index<<"\t"
 	    <<"Layer: "<<ilayer<<"\t"
 	    <<"Cell Number: "<< nphi <<"\t"
 	    << "pathLength: " << input_sim_hit.getPathLength() << " mm"<<"\t"
 	    << std::endl;
 
 //=======================================================================================
-//                                Calculate N_cluster per cm                           //
+//                                  Calculate N_cluster                                //
 //=======================================================================================
     
     const double L_mm = input_sim_hit.getPathLength();
-    if (L_mm <=0) continue;
-    const double l_cm = 0.1*L_mm;
+    //const double ave_length = L_mm/nphi;
 
+    if (L_mm <=0) continue;
+    const double l_cm = L_mm*MM_TO_CM;
+
+    //compute beta gamma
     const double bg = compute_beta_gamma(mcParticle);
+
+    //mean value of the number of eletrons per cluster
     static const double Ne_mean = mean_cluster_size_He();
     const double lambda = get_dNcldx_per_cm(bg)/Ne_mean;
     double mu = lambda * l_cm;
 
-    //Generate Cluster per cm:
+    //Generate Cluster modeled by poisson:
     std::poisson_distribution<int> pois(mu);
-    const int Ncl_step = (std::max(0, pois(rng_engine)))/l_cm;
+    //const int Ncl_step = (std::max(0, pois(rng_engine)))/l_cm;
+    
+    //Generate Cluster modeled by Zero Trancated poisson:
+    const int Ncl_step = ZT_poisson(mu, rng_engine)/l_cm;
     hNcl_perStep->Fill(Ncl_step);
 
     //Generate cluster position inside the loop:
@@ -490,17 +434,20 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
     int n_clusters_in_step = cl_positions_mm.size();
     int Ne;
     std::vector<int> electrons_per_cluster;
+
+    //loop over the number of clusters
     for (int i = 0; i < n_clusters_in_step; ++i)
     {
 	    Ne = sample_cluster_size(rng_engine);
 	    electrons_per_cluster.push_back(Ne); 
     }
+    //loop over the number of electrons per cluster
     for (auto ne : electrons_per_cluster)
     {
 	    hNe_perStep->Fill(ne);
     }
-    //std::cout<<"No Crash after clustering, you are good to go:"<<std::endl;
 
+    //filling histograms
     hPathLength->Fill(pathLength);
     hPLvsnC->Fill(pathLength, nphi);
     hX->Fill(pos.x);
@@ -511,6 +458,7 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
     hR->Fill(R);
     hRvsZ->Fill(pos.z, R);
 
+    //filling a tree
     if (m_clusterTree) {
 	    m_cluster_Ncl_step = Ncl_step;
 	    m_clusterTree->Fill();
@@ -519,15 +467,8 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
 
     // -------------------------------------------------------------------------
     //      calculate hit position projection into the wire
-    TVector3 hit_to_wire_vector = this->dch_data->Calculate_hitpos_to_wire_vector(ilayer, nphi, hit_position);
-    //double distance_hit_wire = hit_to_wire_vector.Mag();
-    //double r_cluster_max = 0.0;
-    //static std::vector<double> maxHitDistLayer(2000, 0.0);
-    //static std::vector<double> maxCluDistLayer(2000, 0.0);
-    //static double globalMaxHitDist_cm = 0.0;
-    //static double globalMaxCluDist_cm = 0.0;
-    //globalMaxHitDist_cm = std::max(globalMaxHitDist_cm, distance_hit_wire);
-    //maxHitDistLayer[ilayer] = std::max(maxHitDistLayer[ilayer], distance_hit_wire);
+    TVector3 hit_to_wire_vector = this->dch_data->Calculate_hitpos_to_wire_vector(
+		    ilayer, nphi, hit_position);
 
     TVector3 hit_projection_on_the_wire = hit_position + hit_to_wire_vector;
     if (m_create_debug_histos.value()) {
@@ -547,7 +488,8 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
     hit_projection_on_the_wire += smearing_z * (wire_direction_ez.Unit());
     if (m_create_debug_histos.value()) {
       // the distance from the hit projection and the wire should be zero
-      TVector3 dummy_vector = this->dch_data->Calculate_hitpos_to_wire_vector(ilayer, nphi, hit_projection_on_the_wire);
+      TVector3 dummy_vector = this->dch_data->Calculate_hitpos_to_wire_vector(
+		      ilayer, nphi, hit_projection_on_the_wire);
       hDww->Fill(dummy_vector.Mag());
     }
 
@@ -616,7 +558,8 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
 	    step_start = hit_position - 0.5 * L_cm * track_dir;
     }
 
-    TVector3 u = wire_direction_ez.Unit();      //unit vector along the wire direction:
+    // for 2D LUT, we need x,y
+    TVector3 u = wire_direction_ez.Unit();
     TVector3 e1(1.0, 0.0, 0.0);
     e1 -= (e1.Dot(u)) * u;
     if (e1.Mag() < 1e-9) {
@@ -639,7 +582,8 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
 	   Ne_cluster = electrons_per_cluster[icl];
 
 	   TVector3 cl_pos = step_start + s_cm * track_dir;
-	   TVector3 cl_to_wire = this->dch_data->Calculate_hitpos_to_wire_vector(hit_ilayer, hit_nphi, cl_pos);
+	   TVector3 cl_to_wire = this->dch_data->Calculate_hitpos_to_wire_vector(
+			   hit_ilayer, hit_nphi, cl_pos);
 	   // Perpendicular displacement to the wire
 	   TVector3 v_perp = cl_to_wire - (cl_to_wire.Dot(u)) * u;
 
@@ -652,49 +596,15 @@ DCHdigi_v01::operator()(const edm4hep::SimTrackerHitCollection& input_sim_hits,
 
 	   for (int ie = 0; ie < Ne_cluster; ++ie)
 	   {
-		   /*const double*/ t_ns = m_xt2d->sampleTimeNs(x_cluster_cm, y_cluster_cm, myRandom);
+		   //drift time of each electron in a cluster
+		   t_ns = m_xt2d->sampleTimeNs(x_cluster_cm, y_cluster_cm, myRandom);
 		   electron_times_ns.push_back(t_ns);
 		   electron_r_cm.push_back(r_cluster_cm);
 
 		   hTd->Fill(t_ns);
 		   hXT->Fill(r_cluster_cm, t_ns);
 	   }
-    }
-//--------------------------------------------End of Drift Time-----------------------------------------//
-
-    /*
-    static int nPrint = 0;
-if (++nPrint % 2000 == 0) {
-  info() << "[CELL-SIZE-SIMPLE] globalMaxHitDist(cm)=" << globalMaxHitDist_cm
-         << " globalMaxClusterDist(cm)=" << globalMaxCluDist_cm
-         << endmsg;
-}
-    
-    if (r_cluster_max > distance_hit_wire + 0.5) { // 0.5 cm margin (tunable)
-  warning() << "[SUSPECT] hitDist=" << distance_hit_wire
-            << " maxClusterDist=" << r_cluster_max
-            << " ilayer=" << ilayer << " nphi=" << nphi
-            << endmsg;
-}
-
-info() << "[CELL-CHECK] hitDist(cm)=" << distance_hit_wire
-       << "  maxClusterDist(cm)=" << r_cluster_max
-       << "  ratio=" << (distance_hit_wire>0 ? r_cluster_max/distance_hit_wire : -1)
-       << endmsg;
-
-    info() << "[CHECK] xt_max_dist_cm=" << xt_max_dist_cm
-       << " rmax_seen=" << rmax_seen
-       << " out=" << n_out << "/" << n_tot
-       << endmsg;
-
-double r_min = 1e9, r_max = -1.0;
-
-for (double r : electron_r_cm) {
-  r_min = std::min(r_min, r);
-  r_max = std::max(r_max, r);
-}
-std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
-*/
+    }//end of the loop on cluster for drift time calculation:
 
 //==========================================================================================
 //                               Apply Polya distribution                                 //
@@ -703,6 +613,8 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
     electron_charges.reserve(electron_times_ns.size());
     double Qtot = 0.0;
 
+    //for each drifted electron, sample the avalunche uisng
+    //Polya distribution.
     for (size_t i = 0; i<electron_times_ns.size(); ++i)
     {
 	    double q = avalancheCharge(myRandom);
@@ -726,17 +638,17 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
         auto it_min = std::min_element(electron_times_ns.begin(), electron_times_ns.end());
         const size_t idx_min = std::distance(electron_times_ns.begin(), it_min);
 
-        const double t0_exact = *it_min;                 // exact drift time (ns), same reference as waveform
-        const double q_exact  = electron_charges[idx_min]; // Polya charge actually used in the waveform
+        const double td = *it_min;
+        const double q  = electron_charges[idx_min]; // Polya charge
 
         // Use electronics fall time to choose a plotting window
         const double tau_f = m_pulseFallTime_ns.value();   // ns
 
         // Time range for plotting the pulse:
-        //  - before t0_exact we expect pure baseline (singleElectronPulse returns 0)
-        //  - after t0_exact we see the full rise and fall
-        double tmin = std::max(0.0, t0_exact - 2.0 * tau_f);
-        double tmax = t0_exact + 10.0 * tau_f;  // covers basically the full tail
+        //  - before td we expect pure baseline (singleElectronPulse returns 0)
+        //  - after td we see the full rise and fall
+        double tmin = std::max(0.0, td - 2.0 * tau_f);
+        double tmax = td + 10.0 * tau_f;  // covers basically the full tail
 
         const int nBinsPulse = 2000; // fine sampling, totally independent of waveform bins
 
@@ -746,11 +658,12 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
         hSignalPulse->SetDirectory(0);
 
         // Fill with the REAL pulse used by the digitizer:
-        //   V(t) = singleElectronPulse(t, t0_exact, q_exact)
+        //   V(t) = singleElectronPulse(t, td, q)
         for (int ibin = 1; ibin <= nBinsPulse; ++ibin) {
           const double t = hSignalPulse->GetBinCenter(ibin);
-          const double v = singleElectronPulse(t, t0_exact, q_exact);
-          hSignalPulse->SetBinContent(ibin, v);
+          const double v = singleElectronPulse(t, td, q);
+          
+	  hSignalPulse->SetBinContent(ibin, v);
         }
       }
       // ------------------------------------------------------------------
@@ -795,11 +708,13 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 	const double cosStereo = std::cos(WireStereoAngle);
 	const double denom     = (std::abs(cosStereo) > 1e-6) ? cosStereo : 1.0;
 
+	//Calculate distance at both ends (Left, Right) of the wire
 	double distR_mm = (m_halfChamberLength_mm - z_hit_mm) / denom;
 	double distL_mm = (m_halfChamberLength_mm + z_hit_mm) / denom;
 	if (distR_mm < 0.0) distR_mm = 0.0;
 	if (distL_mm < 0.0) distL_mm = 0.0;
 
+	//Drift time along wire
 	const double v_mm_per_ns = m_signalSpeed_mm_per_ns.value();
 	const double tpropR_ns = distR_mm / v_mm_per_ns;
 	const double tpropL_ns = distL_mm / v_mm_per_ns;
@@ -809,8 +724,8 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 		(m_wireAttenuationLength_mm.value() > 0.0);
 	const double lambda_mm = m_wireAttenuationLength_mm.value();
 
-	const double attR = doAtt ? std::exp(-distR_mm / lambda_mm) : 1.0;
-	const double attL = doAtt ? std::exp(-distL_mm /  lambda_mm) : 1.0;
+	const double attR = std::exp(-distR_mm / lambda_mm);
+	const double attL = std::exp(-distL_mm / lambda_mm);
 
 	hWaveformL->Reset();
 	hWaveformR->Reset();
@@ -825,6 +740,7 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
     	const double t0 = electron_times_ns[i];
     	const double q  = electron_charges[i];
 
+	//Generate waveform at both ends fo the wire
     	VR += singleElectronPulse(t, t0 + tpropR_ns, q * attR);
     	VL += singleElectronPulse(t, t0 + tpropL_ns, q * attL);
   	}
@@ -835,6 +751,8 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 // ==========================================================================================//
 //                          impedance mismatch (reflection/transmission)                     //
 //===========================================================================================//
+	//This function return the electronics transfer function impulse shape
+	//by using the rise and fall time
 	auto gmct_signalShape2 = [&](double t_ns, double amp) -> double {
 		const double tauFall1 = m_elecTauFall1_ns.value();
 		const double tauRise  = m_elecTauRise_ns.value();
@@ -844,6 +762,7 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 		if (t_ns <= 0.0) return 0.0;
 		if (tauFall1 <= 0.0 || tauFall2 <= 0.0 || tauRise <= 0.0) return 0.0;
 
+		//builds the impulse response
 		double sign = mix * std::exp(-t_ns / tauFall1) / tauFall1;
 		sign       += (1.0 - mix) * std::exp(-t_ns / tauFall2) / tauFall2;
 		sign       *= (1.0 - std::exp(-t_ns / tauRise));
@@ -855,7 +774,8 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 		 return sign * amp;
 	};
 
-	auto apply_step10_electronics = [&](TH1F* hIn, TH1F* hOut) {
+	auto apply_step10_electronics = [&](TH1F* hIn, TH1F* hOut)
+	{
 		if (!hIn || !hOut) return;
 		hOut->Reset();
 		const int nBins = hIn->GetNbinsX();
@@ -863,11 +783,13 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 
 		// --- mismatch scaling
 		double scale = m_frontEndGain.value();
-		if (m_enableImpedanceMismatch.value()) {
+		if (m_enableImpedanceMismatch.value())
+		{
 			const double R = m_matchingRes_Ohm.value();
 			const double Z = m_tubeImpedance_Ohm.value();
 			const double denom = (R + Z);
-			if (std::abs(denom) > 0.0) {
+			if (std::abs(denom) > 0.0)
+			{
 				const double reflect = (R - Z) / denom;
 				scale *= (1.0 - reflect);
 			}
@@ -875,13 +797,16 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 
 		// Copy waveform into vector, apply mismatch+gain
 		std::vector<double> x(nBins, 0.0);
-		for (int ib = 1; ib <= nBins; ++ib) {
+		for (int ib = 1; ib <= nBins; ++ib) 
+		{
 			x[ib - 1] = hIn->GetBinContent(ib) * scale;
 		}
 
 		// If TF disabled, just copy
-		if (!m_enableElectronicsTF.value()) {
-			for (int ib = 1; ib <= nBins; ++ib) {
+		if (!m_enableElectronicsTF.value()) 
+		{
+			for (int ib = 1; ib <= nBins; ++ib)
+			{
 				hOut->SetBinContent(ib, x[ib - 1]);
 			}
 			return;
@@ -891,15 +816,18 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 		const int nKernel = std::min(nBins,
 				std::max(1, int(std::ceil(m_elecKernelLength_ns.value() / dt_ns)) + 1));
 		std::vector<double> k(nKernel, 0.0);
-		for (int ik = 0; ik < nKernel; ++ik) {
+		for (int ik = 0; ik < nKernel; ++ik)
+		{
 			k[ik] = gmct_signalShape2(ik * dt_ns, 1.0);
 		}
 
 		std::vector<double> y(nBins, 0.0);
-		for (int i = 0; i < nBins; ++i) {
+		for (int i = 0; i < nBins; ++i) 
+		{
 			double acc = 0.0;
 			const int jmax = std::min(i, nKernel - 1);
-			for (int j = 0; j <= jmax; ++j) {
+			for (int j = 0; j <= jmax; ++j) 
+			{
 				acc += x[i - j] * k[j];
 			}
 
@@ -907,7 +835,8 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 			y[i] = acc * dt_ns;
 		}
 
-		for (int ib = 1; ib <= nBins; ++ib) {
+		for (int ib = 1; ib <= nBins; ++ib) 
+		{
 			hOut->SetBinContent(ib, y[ib - 1]);
 		}
 	};
@@ -919,7 +848,8 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 //                                add colored noise using FFT/IFFT                            //
 //============================================================================================//
                                 
-	if (m_enableFFTNoise.value() && m_fftNoiseReady) {
+	if (m_enableFFTNoise.value() && m_fftNoiseReady)
+	{
 		const int nBins = hWaveformElecL->GetNbinsX();
 		const double dt_ns = hWaveformElecL->GetXaxis()->GetBinWidth(1);
 
@@ -932,9 +862,12 @@ std::cout << "[R] r_min(cm)=" << r_min << "  r_max(cm)=" << r_max << std::endl;
 		// scale: NoiseGenerator.C does: wf += Re[i] * amplitude / fft_amp
 		const double scale = (m_fftAmpNorm != 0.0) ? (m_noiseScale.value() / m_fftAmpNorm) : 0.0;
 
-		for (int ib = 1; ib <= nBins; ++ib) {
-			hWaveformElecL->SetBinContent(ib, hWaveformElecL->GetBinContent(ib) + scale * noiseL[ib - 1]);
-			hWaveformElecR->SetBinContent(ib, hWaveformElecR->GetBinContent(ib) + scale * noiseR[ib - 1]);
+		for (int ib = 1; ib <= nBins; ++ib) 
+		{
+			hWaveformElecL->SetBinContent(
+					ib, hWaveformElecL->GetBinContent(ib) + scale * noiseL[ib - 1]);
+			hWaveformElecR->SetBinContent(
+					ib, hWaveformElecR->GetBinContent(ib) + scale * noiseR[ib - 1]);
 		}
 	}
 
@@ -1112,9 +1045,6 @@ void DCHdigi_v01::Create_outputROOTfile_for_debugHistograms() {
     hTd->Write();
     hXT->Write();
     if (m_grXT2D) m_grXT2D->Write();
-    hV->Write();
-    pVvsE->Write();
-    hVvsR->Write();
 
     hAvalancheQ->Write();
     hSignalPulse->Write();
@@ -1123,17 +1053,6 @@ void DCHdigi_v01::Create_outputROOTfile_for_debugHistograms() {
     hWaveformR->Write();
     hWaveformElecL->Write();
     hWaveformElecR->Write();
-    hWaveformDigiL->Write();
-    hWaveformDigiR->Write();
-    hV->Write();
-    pVvsE->Write();
-    hVvsR->Write();
-
-    hAvalancheQ->Write();
-    hSignalPulse->Write();
-    hWaveform->Write();
-    hWaveformL->Write();
-    hWaveformR->Write();
     hWaveformDigiL->Write();
     hWaveformDigiR->Write();
     hADCL->Write();
@@ -1209,3 +1128,4 @@ bool DCHdigi_v01::IsParticleCreatedInsideDriftChamber(const edm4hep::MCParticle&
   float DCH_rout_squared = std::pow(dch_data->rout / dd4hep::mm, 2); // 2000 * 2000;
   return (vertexZabs < DCH_halflengh) && (vertexRsquared > DCH_rin_squared) && (vertexRsquared < DCH_rout_squared);
 }
+
