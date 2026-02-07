@@ -44,7 +44,6 @@
 
 // EDM4HEP
 #include "edm4hep/EventHeaderCollection.h"
-#include "edm4hep/ParticleIDData.h"
 #include "edm4hep/SimTrackerHitCollection.h"
 
 // EDM4HEP extension
@@ -166,18 +165,27 @@ private:
   bool IsParticleCreatedInsideDriftChamber(const edm4hep::MCParticle&) const;
   
   //---------------------------Changes made by Muhammad Saiel------------------------------//
+  // Ionization due to MC Particle
+  Gaudi::Property<double> m_MCParticle{this, "MCParticle", 13,
+	  "ID of the monte carlo particle that produce the hit (defaul: Muon)"};
+  
+  //Mean excitation energy
   Gaudi::Property<double> m_MeanExcEnergy_eV{this, "MeanExcitationEnergy_eV", 48.48, 
 	  "Mean excitation Energy I in eV for the gas (Ref: materials_o1_v02.xml)"};
 
+  //Gas density(default: He-isobutane mixture in 90:10)
   Gaudi::Property<double> m_GasDensity_g_cm3{this, "GasDensity_g_cm3", 3.984e-4,
 	  "Gas density in g/cm3 used to convert MeV.cm2/g -> MeV/cm"};
 
-  Gaudi::Property<double> m_W_eff_eV{this, "W_eff_eV", 41,
+  //Energy to produce single ion pair (default: He-isobutane mixture in 90:10)
+  Gaudi::Property<double> m_W_eff_eV{this, "W_eff_eV", 35.0,
 	  "Effective energy per cluster in eV (W_eff)"};
 
+  //Mass of the MC particle
   Gaudi::Property<double> m_MassForBB_GeV{this, "MassForBB_GeV", 0.105658,
 	  "Reference particle mass (GeV) for BetaGamma conversion (default muon mass)"};
 
+  //function to calculate cluster density using Betagamma
   double get_dNcldx_per_cm(double betagamma) const;
 
   //this block is used for drift time parameterization:
@@ -195,64 +203,110 @@ private:
   Gaudi::Property<double> m_GasGain{this, "GasGain", 2.0e5,
 	  "Mean gas gain used in Polya distribution (arbitrary units)" };
   
+  //Polya distribution shape parameter
   Gaudi::Property<double> m_PolyaTheta{this, "PolyaTheta", 0.5,
 	  "Polya shape parameter theta (typicaly around 5 for drift tube)"};
   
   TF1* m_polya{nullptr};
+
+  //Function to produce avalunche charge sample from polya
   double avalancheCharge(TRandom3& myRandom) const;
 
-  // this block is looking for pulse shaaping:
+  //----------------- this block is looking for pulse shaping  --------------------//
+
+  //Scale parameter
   Gaudi::Property<double> m_pulseAmplitudeScale{this, "PulseAmplitudeScale", 5.e-6,
           "Global Scale factor converting avalache charge to voltage"};
+  
+  //Pulse rise time
   Gaudi::Property<double> m_pulseRiseTime_ns{this, "PulseRiseTime_ns", 1.0,
           "Rise time of the single electron pulse (ns)"};
+
+  //Pulse decay time
   Gaudi::Property<double> m_pulseFallTime_ns{this, "PulseFallTime_ns", 7.0,
           "Fall time of the single electron pulse (ns)"};
+
+  //Analog waveform window
   Gaudi::Property<double> m_waveformTimeWindow_ns{this, "WaveformTimeWindow_ns", 300.0,
           "Time window of analog waveform (ns)"};
+
+  //Analog waveform bin size
   Gaudi::Property<double> m_waveformBinSize_ns{this, "WaveformBinSize_ns", 1.0,
           "Time bin size for the analog waveform (ns)"};
+
+  //Function used to produce Single Pulse
   double singleElectronPulse(double t_ns, double t0_ns, double q) const;
 
-  // --- Signal propagation along sense wire:
+  // --------------- Signal propagation along sense wire  ----------------------//
+  
+  //Signal speed along the wire
   Gaudi::Property<double> m_signalSpeed_mm_per_ns{this, "signalSpeed_mm_per_ns", 200.0,
 	  "Propagation speed along sense wire [mm/ns]. 200 mm/ns ~ 5 ns/m"};
-  Gaudi::Property<double> m_wireAttenuationLength_mm{this, "WireAttenuationLength_mm", 1.0e9,
+
+  //Attenuation in signal
+  Gaudi::Property<double> m_wireAttenuationLength_mm{this, "WireAttenuationLength_mm", 1.0e6,
 	  "Attenuation length lambda [mm] for exp(-d/lambda). Very large disables attenuation"};
-  Gaudi::Property<bool> m_enableWireAttenuation{this, "EnableWireAttenuation", false,
+  
+  //Enable or disable the attenuation
+  Gaudi::Property<bool> m_enableWireAttenuation{this, "EnableWireAttenuation", true,
 	  "Enable signal attenuation along the sense wire (charge-division effect)"};
 
-  // --- impedence mismatch + electronics transfer fucntion:
+  // ---------- impedence mismatch + electronics transfer fucntion: -----------//
+
+  //Front end gain of the electronics
   Gaudi::Property<double> m_frontEndGain{this, "FrontEndGain", 1.0,
 	  "Overall analog gain applied before ADC (dimensionless)"};
+
+  //Apply mismatch
   Gaudi::Property<bool> m_enableImpedanceMismatch{this, "EnableImpedanceMismatch", true,
 	  "Enable impedance mismatch scaling (reflection/transmission)"};
-  Gaudi::Property<double> m_matchingRes_Ohm{this, "MatchingRes_Ohm", 50.0,
+
+  //Set the value of mismatch resistance
+  Gaudi::Property<double> m_matchingRes_Ohm{this, "MatchingRes_Ohm", 330.0,
 	  "Matching / termination resistance at preamp input [Ohm]"};
+
+  //Set the value of the Tube Impedance
   Gaudi::Property<double> m_tubeImpedance_Ohm{this, "TubeImpedance_Ohm", 50.0,
 	  "Transmission line / tube characteristic impedance [Ohm]"};
+
+  //Apply Electronic transfer function
   Gaudi::Property<bool> m_enableElectronicsTF{this, "EnableElectronicsTF", true,
 	  "Enable electronics transfer function (shaper impulse response)"};
+
+  //Set the value of Time rise
   Gaudi::Property<double> m_elecTauRise_ns{this, "ElectronicsTauRise_ns", 3.0,
 	  "Electronics shaping rise time constant (ns)"};
+
+  //Set the value of Time fall1
   Gaudi::Property<double> m_elecTauFall1_ns{this, "ElectronicsTauFall1_ns", 9.0,
           "Electronics shaping fall time constant #1 (ns)"};
+
+  //Set the value of Time fall2
   Gaudi::Property<double> m_elecTauFall2_ns{this, "ElectronicsTauFall2_ns", 25.0,
           "Electronics shaping fall time constant #2 (ns)"};
+
+  //Set the fraction value of the Time fall1 and fall2
   Gaudi::Property<double> m_elecMixFraction{this, "ElectronicsMixFraction", 0.5,
 	  "Mixing fraction between fall1 and fall2 (0..1)"};
+
+  //
   Gaudi::Property<double> m_elecKernelLength_ns{this, "ElectronicsKernelLength_ns", 200.0,
 	  "Length of the impulse response kernel used for discrete convolution (ns)"};
 
-  //FFT/IFFT colored noise (from par.root/fft_noise)
+  //--------- FFT/IFFT colored noise (from par.root/fft_noise) --------------//
+  
   Gaudi::Property<bool> m_enableFFTNoise{this, "EnableFFTNoise", true,
 	  "Enable adding colored noise using FFT magnitude from par.root"};
+  
   Gaudi::Property<std::string> m_noiseFileName{this, "NoiseFileName", "par.root",
 	  "ROOT file that contains directory fft_noise with fft_freq/fft_mag/fft_amp"};
+  
   Gaudi::Property<std::string> m_noiseDirName{this, "NoiseDirName", "fft_noise",
 	  "Directory name inside ROOT file containing fft_freq/fft_mag/fft_amp"};
+  
   Gaudi::Property<double> m_noiseScale{this, "NoiseScale", 1.0e-3,
 	  "Overall scale factor for FFT noise (multiplies the generated time-noise)"};
+  
   Gaudi::Property<bool> m_noiseRemoveDC{this, "NoiseRemoveDC", true,
 	  "Remove DC offset from generated noise (recommended)"};
   // Cached FFT-noise template (loaded once in initialize)
@@ -265,11 +319,18 @@ private:
   // --- Digitization of the analog waveform:
   Gaudi::Property<bool>   m_doWaveformDigitization{this, "DoWaveformDigitization", true,
   "Digitize analog waveform into ADC time bins"};
+  
   Gaudi::Property<int> m_adcPolarity{this, "ADCPolarity", +1,
   "+1: positive pulse, -1: negative pulse (electronics polarity)"};
-  Gaudi::Property<int>    m_adcBits{this, "ADCBits", 12, "ADC resolution bits"};
-  Gaudi::Property<double> m_adcLSB_mV{this, "ADCLSB_mV", 0.5, "ADC step (LSB) in mV"};
-  Gaudi::Property<double> m_adcBaseline_mV{this, "ADCBaseline_mV", 50.0, "Baseline in mV"};
+  
+  Gaudi::Property<int>    m_adcBits{this, "ADCBits",12, 
+	  "ADC resolution bits"};
+  
+  Gaudi::Property<double> m_adcLSB_mV{this, "ADCLSB_mV", 0.5, 
+	  "ADC step (LSB) in mV"};
+  
+  Gaudi::Property<double> m_adcBaseline_mV{this, "ADCBaseline_mV", 50.0, 
+	  "Baseline in mV"};
 
 
   //-----------------------------------End of Changes--------------------------------------//
@@ -316,7 +377,7 @@ private:
   TH1F* hClSpacing_mm;
   
   TH1F* hTd;
-  TH2F* hXT;
+  TProfile* hXT;
   TGraph2D* m_grXT2D = nullptr;
   TH1F* hV;
   TProfile* pVvsE;
