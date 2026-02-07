@@ -24,9 +24,10 @@ public:
 
 private:
   inline int idx(int ix, int iy) const { return iy * m_nx + ix; }
-  static inline double clamp(double v, double lo, double hi) {
-    return (v < lo) ? lo : (v > hi) ? hi : v;
-  }
+
+  bool bilinearAt(double x_cm, double y_cm, double& mu_ns, double& sig_ns) const;
+  bool radialMeanSigma(double r_cm, double& mu_ns, double& sig_ns) const;
+  void buildRadialTable(int nr = 400, int nphi = 180);
 
   bool m_loaded = false;
   int m_nx = 0, m_ny = 0;
@@ -37,5 +38,10 @@ private:
 
   std::vector<float> m_mu;   // ns
   std::vector<float> m_sig;  // ns
+
+  // 1D radial representation built from the 2D grid:
+  std::vector<float> m_rbin_cm;
+  std::vector<float> m_mu_r_ns;
+  std::vector<float> m_sig_r_ns;
 };
 
