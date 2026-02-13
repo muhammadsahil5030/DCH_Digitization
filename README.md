@@ -68,15 +68,20 @@ Now, if we want to make some changes or make any updates in the DCHdigi_v01.cpp 
    ```
    make install -j4
    ```
-2. Export
+2. Export I: This export is used to run the updates in the DCHdigi_v01.cpp
    ```
    export LD_LIBRARY_PATH=/afs/cern.ch/user/m/msaiel/Digitization/k4RecTracker/build/DCHdigi:$LD_LIBRARY_PATH
    ```
+   Export II: These export are used to run the updated in the runDCHdigi.py
+   ```
+   export PYTHONPATH=/afs/cern.ch/user/m/msaiel/Digitization/k4RecTracker/install/python:$PYTHONPATH
+   export LD_LIBRARY_PATH=/afs/cern.ch/user/m/msaiel/Digitization/k4RecTracker/install/lib:$LD_LIBRARY_PATH
+   ```
    Note: Set the path according to your own directories.
-3. Run the Python code again
+4. Run the Python code again
    ```
    k4run runDCHdigi.py
    ```
-4. And then follow your analysis codes.
-5. <img width="1078" height="617" alt="waveform" src="https://github.com/user-attachments/assets/5b26ff29-27c9-4ce5-94fa-9c2c57271b41" />
+5. And then follow your analysis codes.
+6. <img width="1078" height="617" alt="waveform" src="https://github.com/user-attachments/assets/5b26ff29-27c9-4ce5-94fa-9c2c57271b41" />
 
