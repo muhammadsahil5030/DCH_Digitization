@@ -1,3 +1,5 @@
+// @author Muhammad Saiel
+
 #ifndef DCH_FFT_NOISE_H
 #define DCH_FFT_NOISE_H
 
