@@ -133,10 +133,8 @@
 // DD4hep
 #include "DD4hep/Detector.h"
 #include "DDSegmentation/BitFieldCoder.h"
-
-
 // DD4hep detector extension
-#include "DDRec/DCH_info.h"
+#include "detectorCommon/WireTracker_info.h"
 
 // Drift time lookup table
 #include "DCHXT2DLUT.h"
@@ -144,7 +142,8 @@
 // ROOT headers
 #include "TH1F.h"
 #include "TRandom3.h"
-#include "TVector3.h"
+//#include "TVector3.h"
+#include <Math/Vector3D.h>
 
 // STL
 #include <memory>
@@ -194,8 +193,8 @@ private:
   /// Decoder for the cellID
   const dd4hep::DDSegmentation::BitFieldCoder* m_decoder{nullptr};
 
-  /// Pointer to drift chamber data extension
-  dd4hep::rec::DCH_info* dch_data = {nullptr};
+  /// DCH-specific geometry extension from detectorCommon/WireTracker_info.h
+  dd4hep::rec::DCH_info* dch_data{nullptr};
 
   double m_halfChamberLength_mm = 0.0;	// gas half-length along z
 
@@ -209,16 +208,24 @@ private:
   /// Print algorithm configuration
   void PrintConfiguration(std::ostream& io) const;
 
+  int CalculateSuperLayerFromCellID(dd4hep::DDSegmentation::CellID id) const {
+    return m_decoder->get(id, "superlayer");
+  }
+
+  int CalculateSectorFromCellID(dd4hep::DDSegmentation::CellID /*id*/) const {
+    return 0;
+  }
+
   int CalculateLayerFromCellID(dd4hep::DDSegmentation::CellID id) const {
     return dch_data->CalculateILayerFromCellIDFields(m_decoder->get(id, "layer"), m_decoder->get(id, "superlayer"));
   }
 
   int CalculateNphiFromCellID(dd4hep::DDSegmentation::CellID id) const { return m_decoder->get(id, "nphi"); }
 
-  TVector3 Convert_EDM4hepVector_to_TVector3(const edm4hep::Vector3d& v, double scale) const {
-    return TVector3(v.x * scale, v.y * scale, v.z * scale);
+  ROOT::Math::XYZVector Convert_EDM4hepVector_to_XYZVector(const edm4hep::Vector3d& v, double scale) const {
+        return {v.x * scale, v.y * scale, v.z * scale};
   }
-
+  
   //// ROOT file containing the x-t relation
   Gaudi::Property<std::string> m_xtFileName{this, "XTFileName", "par.root",
 	  "ROOT file with x-t relation used to convert radius to drift time" };
@@ -257,8 +264,11 @@ private:
   Gaudi::Property<double> m_pulseBinSize_ns{this, "PulseBinSize_ns", 1.0,
           "Time bin size for the analog pulse (ns)"};
 
-    // Time window used only for the debug single-electron pulse histogram
-  Gaudi::Property<double> m_signalPulseWindow_ns{this, "SignalPulseWindow_ns", 500.0,
+  Gaudi::Property<double> m_PulseStart_ns{this, "PulseStart_ns", 0.0,
+          "start time of the pulse (ns)"};
+
+  // Time window used only for the debug single-electron pulse histogram
+  Gaudi::Property<double> m_PulseWindow_ns{this, "PulseWindow_ns", 500.0,
           "Displayed time window of the debug single-electron pulse histogram (ns)"};
 
   // Analog waveform start time

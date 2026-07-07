@@ -1,4 +1,4 @@
-/** ======= WireTrackerDigi_v03 ==========
+/** ======= WireTrackerDigi_v02 ==========
  * Gaudi Algorithm for direct wire-tracker DigiHit creation
  *
  * @author Muhammad Saiel, Giovanni Francesco Tassielli, Nicola De Filippis
@@ -33,7 +33,7 @@
  *   - projecting each cluster position onto the corresponding sense wire
  *   - applying position smearing
  *   - computing drift times from the x-t lookup table
- *   - sampling the cluster electron multiplicity
+ *   - sampling the electron multiplicity for each gas cluster
  *   - accumulating clusters/electrons belonging to the same cell
  *   - producing one final edm4hep::SenseWireHit per readout cell
  *   - producing edm4hep::TrackerHitSimTrackerHitLink truth links
@@ -61,7 +61,8 @@
  *
  * @param xyResolution_mm Gaussian smearing perpendicular to the sense wire, in mm. <br>
  *
- * @param XTFileName ROOT file containing the x-t lookup input used by DCHXT2DLUT. <br>
+ * @param XTFileName ROOT file containing the x-t mean/sigma lookup surfaces
+ * used by DCHXT2DLUT. <br>
  *
  * @param create_debug_histograms Optional flag to enable QA/debug histograms
  * registered to THistSvc. Output ROOT file name is configured from the Gaudi
@@ -96,28 +97,25 @@
 
 // DD4hep
 #include "DDSegmentation/BitFieldCoder.h"
-
-
 // DD4hep detector extension
-#include "DDRec/DCH_info.h"
+#include "detectorCommon/WireTracker_info.h"
 
 // Drift time lookup table
 #include "DCHXT2DLUT.h"
 
 // ROOT headers
-#include "TH1D.h"
 #include "TH1F.h"
 #include "TProfile.h"
 #include "TProfile2D.h"
 #include "TRandom3.h"
-#include "TVector3.h"
+#include <Math/Vector3D.h>
 
 // STL
 #include <memory>
 #include <string>
 #include <vector>
 
-struct WireTrackerDigi_v03 final
+struct WireTrackerDigi_v02 final
     : k4FWCore::MultiTransformer<
           std::tuple<
 	  edm4hep::SenseWireHitCollection,
@@ -125,7 +123,7 @@ struct WireTrackerDigi_v03 final
 	  const edm4hep::SimTrackerHitCollection&,
 	  const edm4hep::EventHeaderCollection&)> {
 
-  WireTrackerDigi_v03(const std::string& name, ISvcLocator* svcLoc);
+  WireTrackerDigi_v02(const std::string& name, ISvcLocator* svcLoc);
 
   StatusCode initialize() override;
   StatusCode finalize() override;
@@ -145,6 +143,8 @@ private:
 
   /// Geometry service name
   Gaudi::Property<std::string> m_geoSvcName{this, "GeoSvcName", "GeoSvc", "The name of the GeoSvc instance"};
+
+  /// Unique ID service name
   Gaudi::Property<std::string> m_uidSvcName{this, "uidSvcName", "uidSvc", "The name of the UniqueIDGenSvc instance"};
 
   /// Detector name
@@ -156,41 +156,56 @@ private:
   /// Decoder for the cellID
   const dd4hep::DDSegmentation::BitFieldCoder* m_decoder{nullptr};
 
-  /// Pointer to drift chamber data extension
-  dd4hep::rec::DCH_info* dch_data = {nullptr};
+  // Geometry helper obtained from the wire-tracker DD4hep extension
+  dd4hep::rec::DCH_info* dch_data{nullptr};
   //------------------------------------------------------------------
 
-  //          machinery for smearing the position
-  /// along the sense wire position resolution in mm
+  // position smearing
+  /// Position resolution along the sense wire [mm]
   Gaudi::Property<float> m_z_resolution_mm{
       this, "zResolution_mm", 1.0,
       "Spatial resolution in the z direction (from reading out the wires at both sides) in mm. Default 1 mm."};
-  /// xy resolution in mm
+
+  /// Position resolution perpendicular to the sense wire [mm]
   Gaudi::Property<float> m_xy_resolution_mm{this, "xyResolution_mm", 0.1,
                                          "Spatial resolution in the xy direction in mm. Default 0.1 mm."};
 
-  /// create seed using the uid
+  /// Service used to build reproducible event-based random seeds
   SmartIF<IUniqueIDGenSvc> m_uidSvc;
 
-  /// Create random engine, initialized with seed out of Event Header
+  /// Create an event-reproducible TRandom3 engine from the EventHeader
   TRandom3 CreateRandomEngine(const edm4hep::EventHeaderCollection& headers) const;
   //------------------------------------------------------------------
 
   /// Print algorithm configuration
   void PrintConfiguration(std::ostream& io) const;
 
+  /// Decode superlayer index from the cellID.
+  int CalculateSuperLayerFromCellID(dd4hep::DDSegmentation::CellID id) const {
+    return m_decoder->get(id, "superlayer");
+  }
+
+  /// Sector is fixed to zero for the current standalone DCH geometry.
+  int CalculateSectorFromCellID(dd4hep::DDSegmentation::CellID /*id*/) const {
+    return 0;
+  }
+
+  /// Convert readout layer fields into the global layer index.
   int CalculateLayerFromCellID(dd4hep::DDSegmentation::CellID id) const {
     return dch_data->CalculateILayerFromCellIDFields(m_decoder->get(id, "layer"), m_decoder->get(id, "superlayer"));
   }
 
+  /// Decode cell index within the layer.
   int CalculateNphiFromCellID(dd4hep::DDSegmentation::CellID id) const { return m_decoder->get(id, "nphi"); }
 
-  TVector3 Convert_EDM4hepVector_to_TVector3(const edm4hep::Vector3d& v, double scale) const {
-    return TVector3(v.x * scale, v.y * scale, v.z * scale);
+  /// Convert an EDM4hep vector to a ROOT XYZVector and apply the requested unit scale.
+  ROOT::Math::XYZVector Convert_EDM4hepVector_to_XYZVector( const edm4hep::Vector3d& v, double scale) const {
+    return {v.x * scale, v.y * scale, v.z * scale};
   }
 
-  edm4hep::Vector3d Convert_TVector3_to_EDM4hepVector(const TVector3& v, double scale) const {
-    return edm4hep::Vector3d{v.x(), v.y(), v.z()}*scale;
+  /// Convert a ROOT XYZVector back to an EDM4hep vector and apply the requested unit scale.
+  edm4hep::Vector3d Convert_XYZVector_to_EDM4hepVector(const ROOT::Math::XYZVector& v, double scale) const {
+    return {v.x() * scale, v.y() * scale, v.z() * scale};
   }
 
   //// ROOT file containing the x-t relation
@@ -207,26 +222,17 @@ private:
   /// histogram to store distance from sim hit position to the sense wire
   SmartIF<ITHistSvc> m_histSvc;
 
-  TH1D* hDpw{nullptr};
-
-  /// histogram to store distance from digi-hit to the wire. Should be zero because digi-hit central position lies on
-  /// the wire. This histogram is a consistency check, because the function used to calculate the distance to the wire
-  /// is different from the function used to calculate the digi-hit central position from a sim-hit position
-  TH1D* hDww{nullptr};
-
-  /// histogram to store smearing along the wire
-  TH1D* hSz{nullptr};
-
-  /// histogram to store smearing perpendicular the wire
-  TH1D* hSxy{nullptr};
-
+  /// Cluster electron multiplicity
   TH1F* hNe{nullptr};
+  /// Sampled drift-time distribution [ns]
   TH1F* hTd{nullptr};
+  /// Drift time versus transverse distance to wire
   TProfile* hXT{nullptr};
+  /// Drift time map in the local transverse wire plane
   TProfile2D* hXYT{nullptr};
 
 };
 
-DECLARE_COMPONENT(WireTrackerDigi_v03);
+DECLARE_COMPONENT(WireTrackerDigi_v02);
 
 

@@ -1,5 +1,3 @@
-#pragma once
-
 /** ================= DistributeClustersInGas =================
  * Gaudi Algorithm for gas-ionization cluster generation in a wire tracker.
  *
@@ -42,8 +40,8 @@
  * @param GasDensity_g_cm3 Gas density used to convert Bethe-Bloch stopping power
  * into energy loss per unit length.
  *
- * @param W_eff_eV Effective energy per ionization cluster used to convert energy
- * loss into mean cluster density.
+ * @param W_eff_eV Effective energy per ionization electron/pair used to convert
+ * energy loss into mean primary-ionization density.
  *
  * @param KeepOnlyPrimaryHits If true, only primary Geant4 hits are converted into
  * gas clusters. If false, primary hits and selected secondary hits created inside
@@ -51,30 +49,34 @@
  *
  * @param create_debug_histograms Optional flag to enable diagnostic histograms
  * via THistSvc.
- */
+************************************************************************************/
 
+#pragma once
+// Gaudi headers
 #include "Gaudi/Accumulators.h"
 #include "Gaudi/Property.h"
 #include "k4FWCore/Transformer.h"
-
 #include <GaudiKernel/SmartIF.h>
 #include "GaudiKernel/ITHistSvc.h"
-
 #include "k4Interface/IGeoSvc.h"
 #include "k4Interface/IUniqueIDGenSvc.h"
 
+// EDM4hep data model headers
 #include "edm4hep/EventHeaderCollection.h"
 #include "edm4hep/MCParticle.h"
 #include "edm4hep/SimTrackerHitCollection.h"
 
-#include "DDRec/DCH_info.h"
+// DD4hep and related geometry headers
+#include "detectorCommon/WireTracker_info.h"
 #include "DDSegmentation/BitFieldCoder.h"
 
+// ROOT headers
 #include "TH1F.h"
 #include "TH2F.h"
 #include "TH3F.h"
 #include "TRandom3.h"
 
+// STL
 #include <string>
 
 struct DistributeClustersInGas final
@@ -120,15 +122,15 @@ private:
   /// CellID decoder from readout
   const dd4hep::DDSegmentation::BitFieldCoder* m_decoder{nullptr};
 
-  /// Detector geometry extension.
-  /// TODO: replace DCH_info by the common WireTracker_info once available.
+  /// Geometry helper obtained from the wire-tracker DD4hep extension.
   dd4hep::rec::DCH_info* dch_data{nullptr};
 
-  /// Event counter
-  mutable Gaudi::Accumulators::Counter<
-      Gaudi::Accumulators::atomicity::full, unsigned int>
-      m_event_counter{this, "EventsProcessed"};
-
+  int calculateSuperLayerFromCellID(dd4hep::DDSegmentation::CellID id) const {
+    return m_decoder->get(id, "superlayer");
+  }
+  int calculateSectorFromCellID(dd4hep::DDSegmentation::CellID /*id*/) const {
+    return 0;
+  }
   int calculateLayerFromCellID(dd4hep::DDSegmentation::CellID id) const {
     return dch_data->CalculateILayerFromCellIDFields(
         m_decoder->get(id, "layer"),
@@ -139,10 +141,14 @@ private:
     return m_decoder->get(id, "nphi");
   }
 
-  // --------------------------------------------------------------------------
-  // Gas / ionization properties
-  // --------------------------------------------------------------------------
+  /// Event counter
+  mutable Gaudi::Accumulators::Counter<
+      Gaudi::Accumulators::atomicity::full, unsigned int>
+      m_event_counter{this, "EventsProcessed"};
 
+  // --------------------------------------------------------------------------
+  // Gas ionization properties
+  // --------------------------------------------------------------------------
   /// Mean excitation energy of the gas
   Gaudi::Property<double> m_MeanExcEnergy_eV{this, 
     "MeanExcitationEnergy_eV", 48.48,"Mean excitation energy I in eV for the gas mixture"};
@@ -163,13 +169,13 @@ private:
   /// Build an event-reproducible random engine from the EventHeader
   TRandom3 CreateRandomEngine(const edm4hep::EventHeaderCollection& headers) const;
 
-  /// Convert Bethe-Bloch + gas properties into mean number of clusters per cm
-  double get_dNcldx_per_cm(double betagamma, const edm4hep::MCParticle& mc) const;
+  /// Return the mean primary-ionization-electron density dN/dx [1/cm].
+  double dNcldx(double betagamma, const edm4hep::MCParticle& mc) const;
 
   /// Check whether a secondary particle was produced inside the active gas volume
   bool isParticleCreatedInsideActiveGasVolume(const edm4hep::MCParticle& mc) const;
 
-  /// Enable  histograms registered to THistSvc
+  /// Enable diagnostic histograms registered to THistSvc
   Gaudi::Property<bool> m_create_debug_histos{this, 
     "create_debug_histograms", false,"Enable diagnostic histograms for gas-cluster generation via THistSvc"};
 
@@ -178,34 +184,24 @@ private:
 
   /// Geant4 step path length
   TH1F* hPathLength{nullptr};
-
   /// Path length versus cell index
   TH2F* hPLvsnC{nullptr};
-
   /// Number of generated clusters per cm
   TH1F* hNcl{nullptr};
-
   /// Inter-cluster spacing in mm
   TH1F* hClSpacing_mm{nullptr};
-
   /// Generated cluster X positions [mm]
   TH1F* hX{nullptr};
-
   /// Generated cluster Y positions [mm]
   TH1F* hY{nullptr};
-
   /// Generated cluster Z positions [mm]
   TH1F* hZ{nullptr};
-
   /// Generated cluster 3D positions [mm]
   TH3F* hXYZ{nullptr};
-
   /// Energy assigned to each generated cluster [GeV]
   TH1F* heDep{nullptr};
-
   /// Generated cluster radial distance from detector axis [mm]
   TH1F* hR{nullptr};
-
   /// Generated cluster radial distance versus z [mm]
   TH2F* hRvsZ{nullptr};
 };
